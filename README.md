@@ -8,7 +8,26 @@ Tabac, alcool, sucre, réseaux sociaux, jeux d'argent, ongles rongés… ou n'im
 
 ---
 
-## Fonctionnalités
+## L'essentiel en 10 secondes
+
+- **Aujourd'hui** : un anneau qui se remplit jusqu'au prochain cap, ce que tu as gardé (argent, unités, victoires) et **un seul gros bouton : « J'ai une envie »**.
+- **J'ai une envie** : le minuteur de respiration démarre tout seul (90 s), un tap pour dire ce qui l'a déclenchée, et **« Prévenir le groupe »** pour recevoir de la force **en direct** pendant la respiration.
+- **Victoire** : écran plein, vibration, compteur de victoires, argent gagné tout de suite.
+- **Groupe en direct** : membres en ligne, compteur collectif du jour, SOS avec compte à rebours, défi du jour, fil d'événements automatiques (envies battues, caps atteints) et « Bravo » en un tap.
+- **Progrès** : graphiques, moments à risque, déclencheurs, caps.
+
+Tout cela fonctionne avec la **formule gratuite Firebase (Spark)**. La formule Blaze ajoute les rappels push planifiés (Cloud Functions).
+
+### Mettre à jour en ligne (formule gratuite)
+```bash
+git pull
+npm install
+npm run deploy:gratuit
+```
+
+---
+
+## Fonctionnalités détaillées
 
 ### Suivi personnel
 - **Deux objectifs** : arrêt complet (série en cours, record, paliers) ou réduction progressive (objectif quotidien, jours d'affilée dans l'objectif).

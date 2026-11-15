@@ -13,9 +13,11 @@
     "test:watch": "vitest",
     "functions:sync": "npm --prefix functions run sync-shared",
     "emulators": "npm run functions:sync && firebase emulators:start",
-    "deploy": "npm run build && npm run functions:sync && firebase deploy"
+    "deploy": "npm run build && npm run functions:sync && firebase deploy",
+    "deploy:gratuit": "npm run build && firebase deploy --only hosting,firestore"
   },
   "dependencies": {
+    "@tabler/icons-react": "^3.52.0",
     "firebase": "^13.3.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

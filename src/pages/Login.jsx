@@ -47,14 +47,10 @@ export default function Login() {
     <main className="center-page login">
       <section className="hero-text">
         <span className="logo big">Déclic</span>
-        <h1>Se libérer d’une habitude, ensemble.</h1>
-        <p className="muted">
-          Suis tes progrès, comprends tes moments difficiles et avance avec une communauté bienveillante.
-          Tabac, alcool, sucre, écrans… Déclic s’adapte à ton combat.
-        </p>
+        <h1>Lâche ce qui te retient.</h1>
+        <p className="muted">Un bouton quand l’envie arrive. Un groupe qui t’envoie de la force en direct. Tes progrès, chaque jour.</p>
       </section>
-      <form className="card narrow" onSubmit={submit}>
-        <h2>{mode === 'login' ? 'Connexion' : 'Créer un compte'}</h2>
+      <form className="login-form" onSubmit={submit}>
         <label>
           Email
           <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -71,7 +67,7 @@ export default function Login() {
           />
         </label>
         {msg && <p className={msg.error ? 'error' : 'success'}>{msg.text}</p>}
-        <button className="btn primary" disabled={busy}>
+        <button className="btn primary xl" disabled={busy}>
           {mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
         </button>
         <button type="button" className="btn ghost" disabled={busy} onClick={() => run(() => signInWithPopup(auth, googleProvider))}>

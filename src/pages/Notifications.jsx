@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { IconArrowLeft, IconBell, IconCompass, IconConfetti, IconMessageCircle } from '@tabler/icons-react';
 import { useAppData } from '../hooks/useAppData.jsx';
 import { markAllRead, markNotification } from '../lib/db.js';
 import { timeAgo } from '../lib/format.js';
 import { describePlan, NOTIF_LEVELS } from '../../shared/index.js';
 
-const ICONS = { risk: '🧭', milestone: '🎉', social: '💬', test: '🔔' };
+const ICONS = { risk: IconCompass, milestone: IconConfetti, social: IconMessageCircle, test: IconBell };
 
 export default function Notifications() {
   const { user, userDoc, notifications, engine } = useAppData();
@@ -29,7 +30,10 @@ export default function Notifications() {
   const paused = (engine?.state?.pausedUntil ?? 0) > Date.now();
 
   return (
-    <div className="notifications">
+    <div className="page notifications">
+      <Link to="/moi" className="back">
+        <IconArrowLeft size={18} aria-hidden /> Moi
+      </Link>
       <h1>Notifications</h1>
 
       <section className="card explain">
@@ -40,22 +44,25 @@ export default function Notifications() {
         </p>
         {paused && (
           <p className="muted">
-            ⏸️ Tes derniers rappels n’ont pas été ouverts : Déclic fait une pause jusqu’au{' '}
+            Tes derniers rappels n’ont pas été ouverts : Déclic fait une pause jusqu’au{' '}
             {new Date(engine.state.pausedUntil).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}.
           </p>
         )}
         <p>{plan ?? 'Aucun rappel prévu pour le moment.'}</p>
-        <Link to="/reglages">Modifier mes préférences</Link>
+        <Link to="/moi">Modifier mes préférences</Link>
       </section>
 
       {notifications.length === 0 ? (
-        <p className="empty card">Rien de neuf. Profite du calme 🌿</p>
+        <p className="empty card">Rien de neuf pour l’instant.</p>
       ) : (
         <ul className="notif-list">
           {notifications.map((n) => (
             <li key={n.id} className={`card notif ${n.readAt ? '' : 'unread'}`}>
               <span className="notif-icon" aria-hidden>
-                {ICONS[n.kind] ?? '🔔'}
+                {(() => {
+                  const I = ICONS[n.kind] ?? IconBell;
+                  return <I size={22} />;
+                })()}
               </span>
               <div className="grow">
                 <strong>{n.title}</strong>

@@ -162,3 +162,12 @@ describe('transparence', () => {
     expect(describePlan(plan, TZ)).toMatch(/2 semaines/);
   });
 });
+
+describe('défi du jour', () => {
+  it('change chaque jour et reste stable dans la journée', async () => {
+    const { challengeOf, CHALLENGES } = await import('../shared/index.js');
+    expect(challengeOf('2026-11-16')).toBe(challengeOf('2026-11-16'));
+    expect(challengeOf('2026-11-16')).not.toBe(challengeOf('2026-11-17'));
+    expect(CHALLENGES).toContain(challengeOf('2030-01-01'));
+  });
+});

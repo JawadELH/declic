@@ -40,3 +40,12 @@ export async function listenForeground(callback) {
   if (!(await pushSupported()) || Notification.permission !== 'granted') return () => {};
   return onMessage(getMessaging(app), (payload) => callback(payload.notification ?? payload.data ?? {}));
 }
+
+/** Notification de test locale (fonctionne avec la formule gratuite). */
+export async function showLocalTest() {
+  if (!(await pushSupported()) || Notification.permission !== 'granted') return false;
+  await registerSW();
+  const reg = await navigator.serviceWorker.ready;
+  await reg.showNotification('Déclic', { body: 'Les notifications fonctionnent sur cet appareil.', icon: '/icon-192.png', badge: '/icon-192.png' });
+  return true;
+}

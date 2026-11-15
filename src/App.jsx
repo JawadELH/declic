@@ -7,10 +7,11 @@ import { isConfigured } from './firebase.js';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import Onboarding from './pages/Onboarding.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Community from './pages/Community.jsx';
+import Today from './pages/Today.jsx';
+import Progress from './pages/Progress.jsx';
+import Group from './pages/Group.jsx';
+import Me from './pages/Me.jsx';
 import Notifications from './pages/Notifications.jsx';
-import Settings from './pages/Settings.jsx';
 
 export default function App() {
   const { user, habits, loading } = useAppData();
@@ -19,7 +20,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     let unsub = () => {};
-    listenForeground((n) => n.title && toast(`${n.title} — ${n.body ?? ''}`, { icon: '🔔', duration: 6000 })).then((u) => (unsub = u));
+    listenForeground((n) => n.title && toast(`${n.title} — ${n.body ?? ''}`, { duration: 6000 })).then((u) => (unsub = u));
     return () => unsub();
   }, [user, toast]);
 
@@ -36,12 +37,15 @@ export default function App() {
 
   return (
     <Routes>
+      <Route path="nouvelle-habitude" element={<Onboarding />} />
       <Route element={<Layout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="communaute" element={<Community />} />
+        <Route index element={<Today />} />
+        <Route path="progres" element={<Progress />} />
+        <Route path="groupe" element={<Group />} />
+        <Route path="moi" element={<Me />} />
         <Route path="notifications" element={<Notifications />} />
-        <Route path="reglages" element={<Settings />} />
-        <Route path="nouvelle-habitude" element={<Onboarding />} />
+        <Route path="communaute" element={<Navigate to="/groupe" replace />} />
+        <Route path="reglages" element={<Navigate to="/moi" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

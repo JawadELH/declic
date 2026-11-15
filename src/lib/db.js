@@ -1,4 +1,6 @@
 // Accès Firestore : toutes les écritures de l'app passent par ici.
+// Tout fonctionne avec la formule gratuite (Spark) : aucune Cloud Function n'est nécessaire
+// pour l'app et le groupe en direct. Les Cloud Functions (formule Blaze) ajoutent les notifications push planifiées.
 import {
   collection,
   doc,
@@ -12,14 +14,16 @@ import {
   serverTimestamp,
   query,
   where,
-  orderBy,
   limit,
+  increment,
+  runTransaction,
 } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../firebase.js';
-import { localParts, DEFAULT_PREFS } from '../../shared/index.js';
+import { deleteUser } from 'firebase/auth';
+import { auth, db } from '../firebase.js';
+import { localParts, dayKey, DEFAULT_PREFS, MINUTE } from '../../shared/index.js';
 
 export const tz = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris';
+export const SOS_DURATION = 10 * MINUTE;
 
 // ---------- Profil ----------
 export async function ensureUserDoc(user) {
@@ -32,6 +36,7 @@ export async function ensureUserDoc(user) {
       lastActiveAt: Date.now(),
       notifPrefs: DEFAULT_PREFS,
       fcmTokens: [],
+      shareActivity: true,
       onboarded: false,
     });
   }
@@ -45,8 +50,8 @@ export function updateUser(uid, data) {
   return updateDoc(doc(db, 'users', uid), data);
 }
 
-export function saveProfile(uid, { pseudo, avatar }) {
-  return setDoc(doc(db, 'profiles', uid), { pseudo: pseudo.trim().slice(0, 30), avatar, updatedAt: serverTimestamp() }, { merge: true });
+export function saveProfile(uid, { pseudo }) {
+  return setDoc(doc(db, 'profiles', uid), { pseudo: pseudo.trim().slice(0, 30), avatar: 'initiale', updatedAt: serverTimestamp() }, { merge: true });
 }
 
 // ---------- Habitudes ----------
@@ -64,80 +69,116 @@ function baseLog(habitId, at) {
   return { habitId, at, localHour: p.hour, localDow: p.dow, createdAt: serverTimestamp() };
 }
 
-/** Enregistre une envie (et, si elle n'a pas été surmontée, une consommation). */
-export async function logCraving(uid, habit, { intensity, trigger, resisted, quantity = 1, note = '' }) {
+/** Envie surmontée : journal + compteur collectif du jour. */
+export async function logResisted(uid, habit, { trigger = null, intensity = 3 } = {}) {
   const at = Date.now();
-  const batch = writeBatch(db);
-  batch.set(doc(collection(db, 'users', uid, 'logs')), {
-    ...baseLog(habit.id, at),
-    type: 'craving',
-    intensity,
-    trigger: trigger || null,
-    resisted,
-    note: note.slice(0, 280),
-  });
-  if (!resisted) {
-    batch.set(doc(collection(db, 'users', uid, 'logs')), { ...baseLog(habit.id, at), type: 'use', quantity, trigger: trigger || null, note: '' });
-    batch.update(doc(db, 'users', uid, 'habits', habit.id), { lastUseAt: at });
-  }
-  await batch.commit();
+  await addDoc(collection(db, 'users', uid, 'logs'), { ...baseLog(habit.id, at), type: 'craving', intensity, trigger, resisted: true, note: '' });
+  bumpPulse().catch(() => {});
 }
 
-/** Enregistre une consommation / un écart. */
-export async function logUse(uid, habit, { quantity = 1, trigger, note = '' }) {
+/** Envie non surmontée ou consommation : journal + date de dernière consommation. */
+export async function logUse(uid, habit, { quantity = 1, trigger = null, fromCraving = false } = {}) {
   const at = Date.now();
   const batch = writeBatch(db);
-  batch.set(doc(collection(db, 'users', uid, 'logs')), {
-    ...baseLog(habit.id, at),
-    type: 'use',
-    quantity,
-    trigger: trigger || null,
-    note: note.slice(0, 280),
-  });
+  if (fromCraving) {
+    batch.set(doc(collection(db, 'users', uid, 'logs')), { ...baseLog(habit.id, at), type: 'craving', intensity: 3, trigger, resisted: false, note: '' });
+  }
+  batch.set(doc(collection(db, 'users', uid, 'logs')), { ...baseLog(habit.id, at), type: 'use', quantity, trigger, note: '' });
   batch.update(doc(db, 'users', uid, 'habits', habit.id), { lastUseAt: at });
   await batch.commit();
 }
 
-// ---------- Communauté ----------
-export function createPost(uid, profile, { text, kind = 'text', habit }) {
-  return addDoc(collection(db, 'posts'), {
-    authorId: uid,
-    authorName: profile?.pseudo || 'Membre',
-    authorAvatar: profile?.avatar || '🙂',
+// ---------- Groupe en direct ----------
+
+/** Compteur collectif « envies battues aujourd'hui ». */
+async function bumpPulse() {
+  const ref = doc(db, 'pulse', dayKey(Date.now()));
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists()) tx.update(ref, { resisted: increment(1) });
+    else tx.set(ref, { resisted: 1 });
+  });
+}
+
+/** Publie un événement dans le fil du groupe. */
+export function publishActivity(uid, profile, { kind, habit, text = '' }) {
+  return addDoc(collection(db, 'activity'), {
+    uid,
+    pseudo: profile?.pseudo || 'Membre',
+    kind, // 'resisted' | 'milestone' | 'start' | 'message' | 'challenge'
     habitId: habit?.templateId ?? 'custom',
     habitLabel: habit?.label ?? '',
-    kind, // 'text' | 'sos' | 'victory'
-    text: text.trim().slice(0, 1000),
+    text: text.trim().slice(0, 280),
     createdAt: serverTimestamp(),
   });
 }
 
-export function deletePost(postId) {
-  return deleteDoc(doc(db, 'posts', postId));
+export function deleteActivity(id) {
+  return deleteDoc(doc(db, 'activity', id));
 }
 
-export async function getMyReaction(postId, uid) {
-  const s = await getDoc(doc(db, 'posts', postId, 'reactions', uid));
-  return s.exists() ? s.data().type : null;
+/** Encourager un événement (une fois par personne) : sous-document + compteur, dans le même lot. */
+export async function cheer(activityId, uid) {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'activity', activityId, 'cheers', uid), { uid, at: serverTimestamp() });
+  batch.update(doc(db, 'activity', activityId), { cheers: increment(1) });
+  await batch.commit();
 }
 
-export function setReaction(postId, uid, type) {
-  const ref = doc(db, 'posts', postId, 'reactions', uid);
-  return type ? setDoc(ref, { type, uid, at: serverTimestamp() }) : deleteDoc(ref);
+export async function hasCheered(activityId, uid) {
+  return (await getDoc(doc(db, 'activity', activityId, 'cheers', uid))).exists();
 }
 
-export function addComment(postId, uid, profile, text) {
-  return addDoc(collection(db, 'posts', postId, 'comments'), {
-    authorId: uid,
-    authorName: profile?.pseudo || 'Membre',
-    authorAvatar: profile?.avatar || '🙂',
-    text: text.trim().slice(0, 500),
+/** Lance un SOS visible par tout le groupe pendant 10 minutes. */
+export async function startSos(uid, profile, habit, trigger) {
+  const ref = await addDoc(collection(db, 'sos'), {
+    uid,
+    pseudo: profile?.pseudo || 'Membre',
+    habitId: habit?.templateId ?? 'custom',
+    habitLabel: habit?.label ?? '',
+    trigger: trigger || null,
+    status: 'open',
+    outcome: null,
     createdAt: serverTimestamp(),
+    expiresAt: Date.now() + SOS_DURATION,
+  });
+  return ref.id;
+}
+
+export function closeSos(sosId, outcome) {
+  return updateDoc(doc(db, 'sos', sosId), { status: 'done', outcome });
+}
+
+/** Envoyer de la force à quelqu'un en SOS (une fois par personne). */
+export async function sendForce(sosId, uid, profile) {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'sos', sosId, 'force', uid), { uid, pseudo: profile?.pseudo || 'Membre', at: serverTimestamp() });
+  batch.update(doc(db, 'sos', sosId), { force: increment(1) });
+  await batch.commit();
+}
+
+/** Relever le défi du jour (une fois par personne et par jour). */
+export async function takeChallenge(uid, key) {
+  const ref = doc(db, 'challenges', key);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    tx.set(doc(db, 'challenges', key, 'takers', uid), { uid, at: serverTimestamp() });
+    if (snap.exists()) tx.update(ref, { count: increment(1) });
+    else tx.set(ref, { count: 1 });
   });
 }
 
-export function reportContent(uid, { postId, commentId = null, reason }) {
-  return addDoc(collection(db, 'reports'), { reporterId: uid, postId, commentId, reason, createdAt: serverTimestamp() });
+export async function hasTakenChallenge(uid, key) {
+  return (await getDoc(doc(db, 'challenges', key, 'takers', uid))).exists();
+}
+
+/** Présence : « X en ligne ». */
+export function heartbeat(uid, profile) {
+  return setDoc(doc(db, 'presence', uid), { lastSeen: Date.now(), pseudo: profile?.pseudo || 'Membre' });
+}
+
+export function reportContent(uid, { activityId, reason = 'inapproprié' }) {
+  return addDoc(collection(db, 'reports'), { reporterId: uid, postId: activityId, collection: 'activity', reason, createdAt: serverTimestamp() });
 }
 
 // ---------- Notifications ----------
@@ -153,26 +194,37 @@ export async function markAllRead(uid, notifs) {
   await batch.commit();
 }
 
-// ---------- Fonctions serveur ----------
-export const sendTestNotification = () => httpsCallable(functions, 'sendTestNotification')();
-export const deleteMyAccount = () => httpsCallable(functions, 'deleteMyAccount')();
+// ---------- Données personnelles (RGPD) ----------
+const readAll = async (q) => (await getDocs(q)).docs;
 
-// ---------- Export RGPD ----------
 export async function exportMyData(uid) {
-  const read = async (path) => (await getDocs(collection(db, ...path))).docs.map((d) => ({ id: d.id, ...d.data() }));
-  const user = (await getDoc(doc(db, 'users', uid))).data();
-  const profile = (await getDoc(doc(db, 'profiles', uid))).data() ?? null;
-  const posts = (await getDocs(query(collection(db, 'posts'), where('authorId', '==', uid), orderBy('createdAt', 'desc'), limit(500)))).docs.map(
-    (d) => ({ id: d.id, ...d.data() }),
-  );
+  const rows = async (q) => (await readAll(q)).map((d) => ({ id: d.id, ...d.data() }));
   return {
     exportedAt: new Date().toISOString(),
-    user: { ...user, fcmTokens: undefined },
-    profile,
-    habits: await read(['users', uid, 'habits']),
-    logs: await read(['users', uid, 'logs']),
-    notifications: await read(['users', uid, 'notifications']),
-    posts,
+    user: { ...(await getDoc(doc(db, 'users', uid))).data(), fcmTokens: undefined },
+    profile: (await getDoc(doc(db, 'profiles', uid))).data() ?? null,
+    habits: await rows(collection(db, 'users', uid, 'habits')),
+    logs: await rows(collection(db, 'users', uid, 'logs')),
+    notifications: await rows(collection(db, 'users', uid, 'notifications')),
+    activity: await rows(query(collection(db, 'activity'), where('uid', '==', uid), limit(1000))),
   };
 }
 
+/** Suppression complète du compte, sans serveur. */
+export async function deleteMyAccount(uid) {
+  const refs = [
+    ...(await readAll(collection(db, 'users', uid, 'logs'))),
+    ...(await readAll(collection(db, 'users', uid, 'habits'))),
+    ...(await readAll(collection(db, 'users', uid, 'notifications'))),
+    ...(await readAll(query(collection(db, 'activity'), where('uid', '==', uid)))),
+    ...(await readAll(query(collection(db, 'sos'), where('uid', '==', uid)))),
+    ...(await readAll(query(collection(db, 'posts'), where('authorId', '==', uid)))),
+  ].map((d) => d.ref);
+  refs.push(doc(db, 'presence', uid), doc(db, 'profiles', uid), doc(db, 'users', uid));
+  for (let i = 0; i < refs.length; i += 400) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + 400).forEach((r) => batch.delete(r));
+    await batch.commit();
+  }
+  await deleteUser(auth.currentUser);
+}

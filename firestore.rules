@@ -14,8 +14,7 @@ service cloud.firestore {
 
     // ---------- Données privées ----------
     match /users/{uid} {
-      allow read, create, update: if isOwner(uid);
-      allow delete: if false; // via la fonction deleteMyAccount
+      allow read, create, update, delete: if isOwner(uid);
 
       match /habits/{habitId} {
         function validHabit(d) {
@@ -66,7 +65,7 @@ service cloud.firestore {
       allow create, update: if isOwner(uid)
         && str(request.resource.data.pseudo, 2, 30)
         && str(request.resource.data.avatar, 1, 16);
-      allow delete: if false;
+      allow delete: if isOwner(uid);
     }
 
     // ---------- Communauté ----------
@@ -108,6 +107,102 @@ service cloud.firestore {
           || get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid
         );
       }
+    }
+
+    // ---------- Groupe en direct (fonctionne sans Cloud Functions) ----------
+    function incOnly(field) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([field])
+        && request.resource.data[field] == resource.data.get(field, 0) + 1;
+    }
+
+    // Événements du fil : victoires, caps, défis, messages.
+    match /activity/{activityId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'pseudo', 'kind', 'habitId', 'habitLabel', 'text', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && str(request.resource.data.pseudo, 1, 30)
+        && request.resource.data.kind in ['resisted', 'milestone', 'start', 'message', 'challenge']
+        && str(request.resource.data.habitId, 1, 40)
+        && str(request.resource.data.habitLabel, 0, 40)
+        && str(request.resource.data.text, 0, 280)
+        && (request.resource.data.kind != 'message' || request.resource.data.text.size() > 0)
+        && request.resource.data.createdAt == request.time;
+      // « Bravo » : +1, une seule fois par personne (le sous-document est créé dans le même lot).
+      allow update: if signedIn() && incOnly('cheers')
+        && resource.data.uid != request.auth.uid
+        && existsAfter(/databases/$(database)/documents/activity/$(activityId)/cheers/$(request.auth.uid))
+        && !exists(/databases/$(database)/documents/activity/$(activityId)/cheers/$(request.auth.uid));
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+
+      match /cheers/{uid} {
+        allow read: if signedIn();
+        allow create: if isOwner(uid) && request.resource.data.uid == uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // SOS en direct : visible 10 minutes, le groupe envoie de la force.
+    match /sos/{sosId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'pseudo', 'habitId', 'habitLabel', 'trigger', 'status', 'outcome', 'createdAt', 'expiresAt'])
+        && request.resource.data.uid == request.auth.uid
+        && str(request.resource.data.pseudo, 1, 30)
+        && request.resource.data.status == 'open'
+        && request.resource.data.expiresAt is number
+        && request.resource.data.expiresAt <= nowMs() + 15 * 60000
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && (
+        (resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'outcome'])
+          && request.resource.data.status == 'done')
+        || (resource.data.uid != request.auth.uid && incOnly('force')
+          && existsAfter(/databases/$(database)/documents/sos/$(sosId)/force/$(request.auth.uid))
+          && !exists(/databases/$(database)/documents/sos/$(sosId)/force/$(request.auth.uid)))
+      );
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+
+      match /force/{uid} {
+        allow read: if signedIn();
+        allow create: if isOwner(uid) && request.resource.data.uid == uid && str(request.resource.data.pseudo, 1, 30);
+        allow update, delete: if false;
+      }
+    }
+
+    // Compteur collectif du jour.
+    match /pulse/{day} {
+      allow read: if signedIn();
+      allow create: if signedIn() && day.size() == 10
+        && request.resource.data.keys().hasOnly(['resisted']) && request.resource.data.resisted == 1;
+      allow update: if signedIn() && incOnly('resisted');
+    }
+
+    // Défi du jour.
+    match /challenges/{day} {
+      allow read: if signedIn();
+      allow create: if signedIn() && day.size() == 10
+        && request.resource.data.keys().hasOnly(['count']) && request.resource.data.count == 1
+        && existsAfter(/databases/$(database)/documents/challenges/$(day)/takers/$(request.auth.uid));
+      allow update: if signedIn() && incOnly('count')
+        && existsAfter(/databases/$(database)/documents/challenges/$(day)/takers/$(request.auth.uid))
+        && !exists(/databases/$(database)/documents/challenges/$(day)/takers/$(request.auth.uid));
+
+      match /takers/{uid} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && request.resource.data.uid == uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // Présence (« X en ligne »).
+    match /presence/{uid} {
+      allow read: if signedIn();
+      allow write: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['lastSeen', 'pseudo'])
+        && request.resource.data.lastSeen is number
+        && str(request.resource.data.pseudo, 1, 30);
+      allow delete: if isOwner(uid);
     }
 
     match /reports/{reportId} {

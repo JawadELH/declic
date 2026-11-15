@@ -1,38 +1,32 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { IconArrowLeft, IconMinus, IconPlus } from '@tabler/icons-react';
 import { useAppData } from '../hooks/useAppData.jsx';
-import { addHabit, saveProfile, updateUser } from '../lib/db.js';
-import { AVATARS } from '../lib/format.js';
+import { addHabit, publishActivity, saveProfile, updateUser } from '../lib/db.js';
+import { habitIcon } from '../lib/ui.js';
 import { HABIT_TEMPLATES, TEMPLATE_LIST, newHabitFromTemplate } from '../../shared/index.js';
 
-const toLocalInput = (ts) => {
-  const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000);
-  return d.toISOString().slice(0, 16);
-};
-
+/** Onboarding en 3 écrans très courts : pseudo → habitude → combien par jour. */
 export default function Onboarding({ first = false }) {
-  const { user, profile } = useAppData();
+  const { user, profile, userDoc } = useAppData();
   const nav = useNavigate();
   const needsProfile = first && !profile?.pseudo;
   const [step, setStep] = useState(needsProfile ? 0 : 1);
   const [pseudo, setPseudo] = useState(profile?.pseudo ?? '');
-  const [avatar, setAvatar] = useState(profile?.avatar ?? AVATARS[1]);
   const [habit, setHabit] = useState(null);
-  const [startNow, setStartNow] = useState(true);
-  const [startAt, setStartAt] = useState(toLocalInput(Date.now()));
   const [busy, setBusy] = useState(false);
-
   const tpl = habit ? HABIT_TEMPLATES[habit.templateId] : null;
-  const set = (k) => (e) => setHabit((h) => ({ ...h, [k]: e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
+  const set = (k, v) => setHabit((h) => ({ ...h, [k]: v }));
 
   async function finish(e) {
     e.preventDefault();
     setBusy(true);
     try {
-      if (needsProfile || pseudo !== profile?.pseudo) await saveProfile(user.uid, { pseudo, avatar });
-      const startedAt = startNow ? Date.now() : new Date(startAt).getTime();
-      await addHabit(user.uid, { ...habit, startedAt, motivation: habit.motivation.trim().slice(0, 300) });
+      if (needsProfile) await saveProfile(user.uid, { pseudo });
+      const h = { ...habit, startedAt: Date.now(), motivation: (habit.motivation ?? '').trim().slice(0, 300) };
+      await addHabit(user.uid, h);
       await updateUser(user.uid, { onboarded: true });
+      if (userDoc?.shareActivity !== false) publishActivity(user.uid, { pseudo: pseudo || profile?.pseudo }, { kind: 'start', habit: h }).catch(() => {});
       nav('/');
     } finally {
       setBusy(false);
@@ -40,144 +34,112 @@ export default function Onboarding({ first = false }) {
   }
 
   return (
-    <main className="center-page">
-      <div className="card wide onboarding">
-        <p className="steps muted small">Étape {needsProfile ? step + 1 : step} / {needsProfile ? 3 : 2}</p>
+    <main className="onb">
+      {step > (needsProfile ? 0 : 1) && (
+        <button className="back" onClick={() => setStep(step - 1)}>
+          <IconArrowLeft size={18} aria-hidden /> Retour
+        </button>
+      )}
+      {!first && step === 1 && (
+        <button className="back" onClick={() => nav('/moi')}>
+          <IconArrowLeft size={18} aria-hidden /> Annuler
+        </button>
+      )}
 
-        {step === 0 && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setStep(1);
-            }}
-          >
-            <h1>Bienvenue sur Déclic 👋</h1>
-            <p className="muted">Choisis un pseudo. Par discrétion, évite ton vrai nom : la communauté te connaîtra sous ce nom.</p>
-            <label>
-              Pseudo
-              <input required minLength={2} maxLength={30} value={pseudo} onChange={(e) => setPseudo(e.target.value)} />
-            </label>
-            <fieldset className="avatars">
-              <legend>Avatar</legend>
-              {AVATARS.map((a) => (
-                <button type="button" key={a} className={`avatar ${a === avatar ? 'on' : ''}`} onClick={() => setAvatar(a)} aria-pressed={a === avatar}>
-                  {a}
-                </button>
-              ))}
-            </fieldset>
-            <button className="btn primary">Continuer</button>
-          </form>
-        )}
+      {step === 0 && (
+        <form
+          className="onb-step"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setStep(1);
+          }}
+        >
+          <h1 className="onb-title">Comment on t’appelle ?</h1>
+          <p className="muted">Un pseudo suffit. Le groupe te connaîtra sous ce nom.</p>
+          <input className="big-input" autoFocus required minLength={2} maxLength={30} value={pseudo} onChange={(e) => setPseudo(e.target.value)} placeholder="Alex" />
+          <button className="btn primary xl">Continuer</button>
+        </form>
+      )}
 
-        {step === 1 && (
-          <div>
-            <h1>De quoi veux-tu te libérer ?</h1>
-            <p className="muted">Tu pourras suivre plusieurs habitudes plus tard.</p>
-            <div className="tpl-grid">
-              {TEMPLATE_LIST.map((t) => (
+      {step === 1 && (
+        <div className="onb-step">
+          <h1 className="onb-title">De quoi veux-tu te libérer ?</h1>
+          <div className="tpl-list">
+            {TEMPLATE_LIST.map((t) => {
+              const Icon = habitIcon(t.id);
+              return (
                 <button
                   key={t.id}
-                  className="tpl"
+                  className="tpl-row"
                   onClick={() => {
                     setHabit(newHabitFromTemplate(t.id));
                     setStep(2);
                   }}
                 >
-                  <span className="tpl-emoji" aria-hidden>{t.emoji}</span>
-                  {t.label}
+                  <Icon size={24} aria-hidden />
+                  <span>{t.label}</span>
                 </button>
-              ))}
-            </div>
-            {!first && (
-              <button className="btn ghost" onClick={() => nav('/')}>
-                Annuler
-              </button>
-            )}
+              );
+            })}
           </div>
-        )}
+        </div>
+      )}
 
-        {step === 2 && habit && (
-          <form onSubmit={finish} className="form-grid">
-            <h1>
-              {habit.emoji} {habit.label}
-            </h1>
-            {tpl?.warning && <p className="warning" role="note">⚠️ {tpl.warning}</p>}
+      {step === 2 && habit && (
+        <form className="onb-step" onSubmit={finish}>
+          {habit.templateId === 'custom' ? (
+            <>
+              <h1 className="onb-title">Ton habitude</h1>
+              <input className="big-input" required maxLength={40} value={habit.label === 'Autre habitude' ? '' : habit.label} onChange={(e) => set('label', e.target.value)} placeholder="Grignoter le soir" />
+            </>
+          ) : (
+            <h1 className="onb-title">Avant, combien de {habit.unitPlural} par jour ?</h1>
+          )}
 
-            {habit.templateId === 'custom' && (
-              <>
-                <label>
-                  Nom de l’habitude
-                  <input required maxLength={40} value={habit.label} onChange={set('label')} />
-                </label>
-                <label>
-                  Emoji
-                  <input maxLength={4} value={habit.emoji} onChange={set('emoji')} />
-                </label>
-                <label>
-                  Unité (singulier / pluriel)
-                  <div className="row">
-                    <input required maxLength={30} value={habit.unit} onChange={set('unit')} />
-                    <input required maxLength={30} value={habit.unitPlural} onChange={set('unitPlural')} />
-                  </div>
-                </label>
-              </>
-            )}
+          <div className="stepper">
+            <button type="button" onClick={() => set('baselinePerDay', Math.max(0, habit.baselinePerDay - 1))} aria-label="Moins">
+              <IconMinus size={24} />
+            </button>
+            <input type="number" min="0" step="any" value={habit.baselinePerDay} onChange={(e) => set('baselinePerDay', Number(e.target.value))} aria-label="Quantité par jour" />
+            <button type="button" onClick={() => set('baselinePerDay', habit.baselinePerDay + 1)} aria-label="Plus">
+              <IconPlus size={24} />
+            </button>
+          </div>
+          {habit.templateId === 'custom' && <p className="muted small center">fois par jour</p>}
 
-            <fieldset className="segmented">
-              <legend>Objectif</legend>
-              <label className={habit.mode === 'quit' ? 'on' : ''}>
-                <input type="radio" name="mode" value="quit" checked={habit.mode === 'quit'} onChange={set('mode')} /> Arrêter complètement
-              </label>
-              <label className={habit.mode === 'reduce' ? 'on' : ''}>
-                <input type="radio" name="mode" value="reduce" checked={habit.mode === 'reduce'} onChange={set('mode')} /> Réduire progressivement
-              </label>
-            </fieldset>
-
-            <label>
-              Avant, en moyenne par jour ({habit.unitPlural})
-              <input type="number" min="0" step="any" required value={habit.baselinePerDay} onChange={set('baselinePerDay')} />
+          {habit.costPerUnit > 0 || habit.templateId === 'custom' ? (
+            <label className="inline-field">
+              Prix par {habit.unit}
+              <span>
+                <input type="number" min="0" step="0.01" value={habit.costPerUnit} onChange={(e) => set('costPerUnit', Number(e.target.value))} /> €
+              </span>
             </label>
-            {habit.mode === 'reduce' && (
-              <label>
-                Objectif maximum par jour
-                <input type="number" min="0" step="any" required value={habit.targetPerDay} onChange={set('targetPerDay')} />
-              </label>
-            )}
-            <label>
-              Coût par {habit.unit} (€) <span className="muted small">— 0 si non pertinent</span>
-              <input type="number" min="0" step="0.01" value={habit.costPerUnit} onChange={set('costPerUnit')} />
+          ) : null}
+
+          <div className="segmented">
+            <button type="button" className={habit.mode === 'quit' ? 'on' : ''} onClick={() => set('mode', 'quit')}>
+              Arrêter
+            </button>
+            <button type="button" className={habit.mode === 'reduce' ? 'on' : ''} onClick={() => set('mode', 'reduce')}>
+              Réduire
+            </button>
+          </div>
+          {habit.mode === 'reduce' && (
+            <label className="inline-field">
+              Maximum par jour
+              <input type="number" min="0" step="any" value={habit.targetPerDay} onChange={(e) => set('targetPerDay', Number(e.target.value))} />
             </label>
+          )}
 
-            <fieldset>
-              <legend>Date de départ</legend>
-              <label className="inline">
-                <input type="checkbox" checked={startNow} onChange={(e) => setStartNow(e.target.checked)} /> Maintenant
-              </label>
-              {!startNow && <input type="datetime-local" value={startAt} max={toLocalInput(Date.now())} onChange={(e) => setStartAt(e.target.value)} />}
-            </fieldset>
+          <input maxLength={300} value={habit.motivation} onChange={(e) => set('motivation', e.target.value)} placeholder="Ton pourquoi (facultatif) : pour mes enfants, pour courir…" />
 
-            <label>
-              Mon pourquoi <span className="muted small">— on te le rappellera dans les moments difficiles</span>
-              <textarea rows={3} maxLength={300} placeholder="Pour respirer mieux, pour mes enfants, pour économiser pour un voyage…" value={habit.motivation} onChange={set('motivation')} />
-            </label>
+          {tpl?.warning && <p className="warning small">{tpl.warning}</p>}
 
-            {tpl?.helpline && (
-              <p className="muted small">
-                Besoin d’un accompagnement professionnel ? {tpl.helpline.name} : <a href={`tel:${tpl.helpline.phone.replace(/\s/g, '')}`}>{tpl.helpline.phone}</a>
-              </p>
-            )}
-
-            <div className="row">
-              <button type="button" className="btn ghost" onClick={() => setStep(1)}>
-                Retour
-              </button>
-              <button className="btn primary" disabled={busy}>
-                C’est parti !
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
+          <button className="btn primary xl" disabled={busy}>
+            Je commence maintenant
+          </button>
+        </form>
+      )}
     </main>
   );
 }
