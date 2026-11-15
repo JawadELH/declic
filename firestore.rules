@@ -1,0 +1,120 @@
+rules_version = '2';
+
+// Règles de sécurité Déclic.
+// - Les données personnelles (habitudes, journal, notifications) ne sont lisibles que par leur propriétaire.
+// - L'état du moteur de notifications n'est écrit que par les Cloud Functions.
+// - Les compteurs sociaux (réactions, commentaires) sont tenus par les Cloud Functions.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function str(v, min, max) { return v is string && v.size() >= min && v.size() <= max; }
+    function nowMs() { return request.time.toMillis(); }
+
+    // ---------- Données privées ----------
+    match /users/{uid} {
+      allow read, create, update: if isOwner(uid);
+      allow delete: if false; // via la fonction deleteMyAccount
+
+      match /habits/{habitId} {
+        function validHabit(d) {
+          return str(d.label, 1, 40)
+            && d.mode in ['quit', 'reduce']
+            && d.baselinePerDay is number && d.baselinePerDay >= 0 && d.baselinePerDay < 100000
+            && d.costPerUnit is number && d.costPerUnit >= 0 && d.costPerUnit < 100000
+            && d.startedAt is number && d.startedAt <= nowMs() + 60000
+            && (!('motivation' in d) || str(d.motivation, 0, 300));
+        }
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid) && validHabit(request.resource.data);
+        allow delete: if isOwner(uid);
+      }
+
+      match /logs/{logId} {
+        function validLog(d) {
+          return str(d.habitId, 1, 128)
+            && d.type in ['craving', 'use']
+            && d.at is number && d.at <= nowMs() + 60000 && d.at > nowMs() - 7 * 86400000
+            && d.localHour is int && d.localHour >= 0 && d.localHour <= 23
+            && d.localDow is int && d.localDow >= 0 && d.localDow <= 6
+            && (d.type != 'craving' || (d.intensity is int && d.intensity >= 1 && d.intensity <= 5 && d.resisted is bool))
+            && (d.type != 'use' || (d.quantity is number && d.quantity > 0 && d.quantity < 10000))
+            && (!('note' in d) || str(d.note, 0, 280));
+        }
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid) && validLog(request.resource.data);
+        allow update: if false;
+      }
+
+      match /notifications/{notifId} {
+        allow read, delete: if isOwner(uid);
+        allow update: if isOwner(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt', 'openedAt']);
+        allow create: if false;
+      }
+    }
+
+    match /engine/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // ---------- Profils publics (pseudonymes) ----------
+    match /profiles/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isOwner(uid)
+        && str(request.resource.data.pseudo, 2, 30)
+        && str(request.resource.data.avatar, 1, 16);
+      allow delete: if false;
+    }
+
+    // ---------- Communauté ----------
+    match /posts/{postId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['authorId', 'authorName', 'authorAvatar', 'habitId', 'habitLabel', 'kind', 'text', 'createdAt'])
+        && request.resource.data.authorId == request.auth.uid
+        && str(request.resource.data.authorName, 1, 30)
+        && str(request.resource.data.authorAvatar, 1, 16)
+        && str(request.resource.data.habitId, 1, 40)
+        && str(request.resource.data.habitLabel, 0, 40)
+        && request.resource.data.kind in ['text', 'sos', 'victory']
+        && str(request.resource.data.text, 1, 1000)
+        && request.resource.data.createdAt == request.time;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+      match /reactions/{uid} {
+        allow read: if signedIn();
+        allow create, update: if isOwner(uid)
+          && request.resource.data.type in ['courage', 'bravo', 'merci']
+          && request.resource.data.uid == uid;
+        allow delete: if isOwner(uid);
+      }
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['authorId', 'authorName', 'authorAvatar', 'text', 'createdAt'])
+          && request.resource.data.authorId == request.auth.uid
+          && str(request.resource.data.authorName, 1, 30)
+          && str(request.resource.data.authorAvatar, 1, 16)
+          && str(request.resource.data.text, 1, 500)
+          && request.resource.data.createdAt == request.time;
+        allow update: if false;
+        allow delete: if signedIn() && (
+          resource.data.authorId == request.auth.uid
+          || get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid
+        );
+      }
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && str(request.resource.data.reason, 1, 200);
+      allow read, update, delete: if false; // consultés par la modération via la console / l'Admin SDK
+    }
+  }
+}

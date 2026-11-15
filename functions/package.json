@@ -1,0 +1,15 @@
+{
+  "name": "declic-functions",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "sync-shared": "node scripts/sync-shared.cjs",
+    "check": "npm run sync-shared && node --check index.js && node -e \"import('./index.js').then(m => console.log('Fonctions exportées :', Object.keys(m).join(', ')))\""
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.1",
+    "firebase-functions": "^7.4.0"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "declic",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Déclic — réseau social bienveillant pour se libérer de ses mauvaises habitudes (tabac, alcool, sucre, écrans…).",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "functions:sync": "npm --prefix functions run sync-shared",
+    "emulators": "npm run functions:sync && firebase emulators:start",
+    "deploy": "npm run build && npm run functions:sync && firebase deploy"
+  },
+  "dependencies": {
+    "firebase": "^13.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.3.0",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}
