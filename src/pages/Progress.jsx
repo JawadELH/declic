@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { IconCheck } from '@tabler/icons-react';
+import { IconCheck, IconTrendingDown, IconTrendingUp } from '@tabler/icons-react';
 import { useAppData, useNow } from '../hooks/useAppData.jsx';
 import { CravingsChart, Heatmap, SavingsChart, TriggersChart } from '../components/Charts.jsx';
 import { money, num, pct } from '../lib/format.js';
-import { computeHabitStats, deriveInsights, formatDuration, templateOf } from '../../shared/index.js';
+import { computeExtraStats, computeHabitStats, deriveInsights, formatDuration, templateOf } from '../../shared/index.js';
 
 export default function Progress() {
   const { habits, logs } = useAppData();
@@ -12,6 +12,7 @@ export default function Progress() {
   const habit = habits.find((h) => h.id === id) ?? habits[0];
   const stats = useMemo(() => computeHabitStats(habit, logs, now), [habit, logs, now]);
   const insights = useMemo(() => deriveInsights(habit, logs, now), [habit, logs, now]);
+  const extra = useMemo(() => computeExtraStats(habit, logs, now), [habit, logs, now]);
   const tpl = templateOf(habit);
 
   return (
@@ -33,6 +34,75 @@ export default function Progress() {
         <Tile label="Envies surmontées" value={pct(stats.resistRate)} sub={`${stats.resisted} sur ${stats.cravingsTotal}`} />
         <Tile label={habit.mode === 'quit' ? 'Record' : 'Depuis le début'} value={formatDuration(habit.mode === 'quit' ? stats.longestStreakMs : stats.elapsedMs).split(' ').slice(0, 2).join(' ')} />
       </div>
+
+      <section className="card projection-card">
+        <h3>À ce rythme</h3>
+        <div className="proj-row">
+          <div>
+            <span className="muted small">Dans 1 mois</span>
+            <strong>{habit.costPerUnit > 0 ? money(extra.projection.month.money, habit.currency) : `${num(extra.projection.month.units)} ${habit.unitPlural}`}</strong>
+          </div>
+          <div>
+            <span className="muted small">Dans 1 an</span>
+            <strong>{habit.costPerUnit > 0 ? money(extra.projection.year.money, habit.currency) : `${num(extra.projection.year.units)} ${habit.unitPlural}`}</strong>
+          </div>
+        </div>
+        <p className="muted small">
+          {habit.costPerUnit > 0 ? `gardés en plus, soit ${num(extra.projection.year.units)} ${habit.unitPlural} en moins par an.` : 'en moins, calculé sur tes 14 derniers jours.'}
+        </p>
+      </section>
+
+      <section className="card">
+        <h3>Cette semaine vs la précédente</h3>
+        <div className="compare">
+          <Compare label="Envies" values={extra.week.cravings} lowerIsBetter />
+          <Compare label="Envies battues" values={extra.week.resisted} />
+          <Compare label={habit.mode === 'quit' ? 'Écarts' : 'Consommé'} values={extra.week.used} lowerIsBetter />
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="row between">
+          <h3>8 dernières semaines</h3>
+          <span className="muted small">
+            {extra.cleanDays} jour{extra.cleanDays > 1 ? 's' : ''} {habit.mode === 'quit' ? `sans ${habit.label.toLowerCase()}` : 'dans l’objectif'}
+          </span>
+        </div>
+        <div className="calendar" role="img" aria-label="Calendrier des 8 dernières semaines">
+          {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, k) => (
+            <span key={k} className="cal-head">
+              {d}
+            </span>
+          ))}
+          {extra.calendar.map((c) => (
+            <span key={c.key} className={`cal ${c.status}`} title={`${c.key}`} />
+          ))}
+        </div>
+        <div className="cal-legend muted small">
+          <span>
+            <span className="cal clean" /> {habit.mode === 'quit' ? 'jour sans' : 'objectif tenu'}
+          </span>
+          <span>
+            <span className="cal used" /> {habit.mode === 'quit' ? 'écart' : 'dépassé'}
+          </span>
+        </div>
+      </section>
+
+      <section className="card">
+        <h3>Tes moments de la journée</h3>
+        <ul className="dayparts">
+          {extra.dayparts.map((p) => (
+            <li key={p.id}>
+              <span className="dp-label">{p.label}</span>
+              <span className="dp-track">
+                <span className="dp-fill" style={{ width: `${p.rate == null ? 0 : p.rate * 100}%` }} />
+              </span>
+              <span className="dp-value">{p.count ? `${pct(p.rate)} battues` : '—'}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="muted small">Part des envies surmontées selon le moment. Le plus faible est celui à préparer.</p>
+      </section>
 
       {insights.length > 0 && (
         <section className="card">
@@ -74,6 +144,25 @@ export default function Progress() {
         <p className="muted small center">
           Besoin d’un accompagnement ? {tpl.helpline.name} : <a href={`tel:${tpl.helpline.phone.replace(/\s/g, '')}`}>{tpl.helpline.phone}</a>
         </p>
+      )}
+    </div>
+  );
+}
+
+function Compare({ label, values: [now, before], lowerIsBetter }) {
+  const diff = now - before;
+  const good = lowerIsBetter ? diff < 0 : diff > 0;
+  const Icon = diff < 0 ? IconTrendingDown : IconTrendingUp;
+  return (
+    <div className="cmp">
+      <span className="tile-label">{label}</span>
+      <span className="tile-value">{num(now, 1)}</span>
+      {before > 0 || now > 0 ? (
+        <span className={`cmp-delta ${diff === 0 ? '' : good ? 'good' : 'bad'}`}>
+          {diff !== 0 && <Icon size={14} aria-hidden />} {diff === 0 ? 'stable' : `${diff > 0 ? '+' : ''}${num(diff, 1)}`}
+        </span>
+      ) : (
+        <span className="cmp-delta">—</span>
       )}
     </div>
   );

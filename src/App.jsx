@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAppData } from './hooks/useAppData.jsx';
 import { useToast } from './components/Toast.jsx';
 import { listenForeground } from './lib/messaging.js';
@@ -10,12 +10,27 @@ import Onboarding from './pages/Onboarding.jsx';
 import Today from './pages/Today.jsx';
 import Progress from './pages/Progress.jsx';
 import Group from './pages/Group.jsx';
+import CirclePage from './pages/CirclePage.jsx';
+import InviteAlly from './pages/InviteAlly.jsx';
 import Me from './pages/Me.jsx';
+import Admin from './pages/Admin.jsx';
 import Notifications from './pages/Notifications.jsx';
 
 export default function App() {
   const { user, habits, loading } = useAppData();
   const toast = useToast();
+  const location = useLocation();
+
+  // Lien d'invitation ouvert avant connexion / premier démarrage : on le garde pour après.
+  useEffect(() => {
+    if (location.pathname.startsWith('/allie/') && (!user || !habits?.length)) {
+      try {
+        sessionStorage.setItem('declic.invite', location.pathname + location.search);
+      } catch {
+        /* indisponible */
+      }
+    }
+  }, [location, user, habits]);
 
   useEffect(() => {
     if (!user) return;
@@ -25,7 +40,12 @@ export default function App() {
   }, [user, toast]);
 
   if (!isConfigured) return <MissingConfig />;
-  if (loading) return <div className="splash" aria-busy="true"><span className="logo">Déclic</span></div>;
+  if (loading)
+    return (
+      <div className="splash" aria-busy="true">
+        <span className="logo big">Déclic</span>
+      </div>
+    );
   if (!user) return <Login />;
   if (!habits.length) {
     return (
@@ -42,7 +62,10 @@ export default function App() {
         <Route index element={<Today />} />
         <Route path="progres" element={<Progress />} />
         <Route path="groupe" element={<Group />} />
+        <Route path="cercle/:id" element={<CirclePage />} />
+        <Route path="allie/:uid" element={<InviteAlly />} />
         <Route path="moi" element={<Me />} />
+        <Route path="admin" element={<Admin />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="communaute" element={<Navigate to="/groupe" replace />} />
         <Route path="reglages" element={<Navigate to="/moi" replace />} />
@@ -55,11 +78,10 @@ export default function App() {
 function MissingConfig() {
   return (
     <main className="center-page">
-      <div className="card narrow">
+      <div className="card">
         <h1>Configuration Firebase manquante</h1>
-        <p>
-          Copie <code>.env.example</code> en <code>.env.local</code> et renseigne les clés de ton projet Firebase,
-          puis relance <code>npm run dev</code>. Tout est expliqué dans le README.
+        <p className="muted">
+          Copie <code>.env.example</code> en <code>.env.local</code> et renseigne les clés de ton projet Firebase, puis relance <code>npm run dev</code>.
         </p>
       </div>
     </main>

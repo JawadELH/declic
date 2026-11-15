@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { IconChevronRight, IconConfetti } from '@tabler/icons-react';
+import { IconChevronRight, IconConfetti, IconX } from '@tabler/icons-react';
 import { useAppData, useNow } from '../hooks/useAppData.jsx';
 import { usePulse } from '../hooks/useGroup.js';
 import CravingFlow from '../components/CravingFlow.jsx';
@@ -55,6 +55,7 @@ export default function Today() {
   const [selected, setSelected] = useState(() => store.get(STORE));
   const [flow, setFlow] = useState(null);
   const [celebrate, setCelebrate] = useState(null);
+  const [tip, setTip] = useState(() => store.get('declic.tip') !== 'vu');
   const habit = habits.find((h) => h.id === selected) ?? habits[0];
   const stats = useMemo(() => computeHabitStats(habit, logs, now), [habit, logs, now]);
   const quit = habit.mode === 'quit';
@@ -151,6 +152,25 @@ export default function Today() {
           <span className="duo-label">victoire{stats.resisted > 1 ? 's' : ''}</span>
         </div>
       </section>
+
+      {tip && stats.cravingsTotal < 3 && (
+        <aside className="tip-card">
+          <p>
+            <strong>Le réflexe Déclic :</strong> dès que l’envie arrive, appuie sur le bouton. On respire 90 secondes ensemble, et le groupe peut t’envoyer de
+            la force.
+          </p>
+          <button
+            className="icon-btn"
+            aria-label="Masquer l’astuce"
+            onClick={() => {
+              setTip(false);
+              store.set('declic.tip', 'vu');
+            }}
+          >
+            <IconX size={18} />
+          </button>
+        </aside>
+      )}
 
       <section className="cta-zone">
         <button className="btn primary xl" onClick={() => setFlow('craving')}>

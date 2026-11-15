@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { signOut } from 'firebase/auth';
-import { IconBell, IconChevronRight, IconPlus } from '@tabler/icons-react';
+import { sendEmailVerification, signOut } from 'firebase/auth';
+import { IconBell, IconChevronRight, IconLink, IconMail, IconPlus, IconShieldCheck } from '@tabler/icons-react';
 import { auth } from '../firebase.js';
 import { useAppData } from '../hooks/useAppData.jsx';
 import { useToast } from '../components/Toast.jsx';
 import Avatar from '../components/Avatar.jsx';
-import { deleteMyAccount, exportMyData, saveProfile, updateHabit, updateUser } from '../lib/db.js';
+import { deleteMyAccount, exportMyData, getProfile, saveProfile, unblockUser, updateHabit, updateUser } from '../lib/db.js';
+import { useSocial } from '../hooks/useSocial.jsx';
+import { shareInvite } from './Allies.jsx';
 import { disablePush, enablePush, pushSupported, showLocalTest } from '../lib/messaging.js';
 import { habitIcon } from '../lib/ui.js';
 import { DEFAULT_PREFS, NOTIF_LEVELS } from '../../shared/index.js';
@@ -20,6 +22,8 @@ export default function Me() {
   const [pseudo, setPseudo] = useState(profile?.pseudo ?? '');
   const [canPush, setCanPush] = useState(false);
   const [confirm, setConfirm] = useState('');
+  const social = useSocial();
+  const needsVerify = user.providerData?.some((p) => p.providerId === 'password') && !user.emailVerified;
 
   useEffect(() => {
     pushSupported().then(setCanPush);
@@ -72,6 +76,30 @@ export default function Me() {
           <p className="muted small">{user.email}</p>
         </div>
       </header>
+
+      {needsVerify && (
+        <section className="notice row">
+          <IconMail size={20} aria-hidden />
+          <span className="grow small">Confirme ton adresse e-mail pour sécuriser ton compte.</span>
+          <button className="link small" onClick={() => sendEmailVerification(user).then(() => toast('E-mail envoyé. Clique sur le lien puis reconnecte-toi.'))}>
+            Envoyer
+          </button>
+        </section>
+      )}
+
+      {social.isMod && (
+        <Link to="/admin" className="row-link card admin-link">
+          <IconShieldCheck size={20} aria-hidden />
+          <span className="grow">{social.isAdmin ? 'Administration' : 'Modération'}</span>
+          <IconChevronRight size={18} aria-hidden />
+        </Link>
+      )}
+
+      <button className="row-link card" onClick={() => shareInvite(user.uid, userDoc, profile?.pseudo, toast).catch(() => {})}>
+        <IconLink size={20} aria-hidden />
+        <span className="grow">Inviter un allié</span>
+        <IconChevronRight size={18} aria-hidden />
+      </button>
 
       <Link to="/notifications" className="row-link card">
         <IconBell size={20} aria-hidden />
@@ -159,6 +187,13 @@ export default function Me() {
         />
       </section>
 
+      {social.blocked.size > 0 && (
+        <section className="card stack">
+          <h3>Personnes bloquées</h3>
+          <BlockedList uid={user.uid} ids={[...social.blocked]} />
+        </section>
+      )}
+
       <section className="card stack">
         <h3>Mes données</h3>
         <div className="row wrap">
@@ -181,6 +216,26 @@ export default function Me() {
         </details>
       </section>
     </div>
+  );
+}
+
+function BlockedList({ uid, ids }) {
+  const [names, setNames] = useState({});
+  useEffect(() => {
+    ids.forEach((id) => getProfile(id).then((p) => setNames((n) => ({ ...n, [id]: p?.pseudo ?? 'Membre' }))).catch(() => {}));
+  }, [ids.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <ul className="people">
+      {ids.map((id) => (
+        <li key={id} className="person">
+          <Avatar uid={id} pseudo={names[id]} size={32} />
+          <span className="grow">{names[id] ?? '…'}</span>
+          <button className="link small" onClick={() => unblockUser(uid, id)}>
+            Débloquer
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

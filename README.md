@@ -14,7 +14,11 @@ Tabac, alcool, sucre, réseaux sociaux, jeux d'argent, ongles rongés… ou n'im
 - **J'ai une envie** : le minuteur de respiration démarre tout seul (90 s), un tap pour dire ce qui l'a déclenchée, et **« Prévenir le groupe »** pour recevoir de la force **en direct** pendant la respiration.
 - **Victoire** : écran plein, vibration, compteur de victoires, argent gagné tout de suite.
 - **Groupe en direct** : membres en ligne, compteur collectif du jour, SOS avec compte à rebours, défi du jour, fil d'événements automatiques (envies battues, caps atteints) et « Bravo » en un tap.
-- **Progrès** : graphiques, moments à risque, déclencheurs, caps.
+- **Progrès** : projection à 1 mois et 1 an, semaine vs semaine, calendrier des 8 dernières semaines, réussite par moment de la journée, moments à risque, déclencheurs, caps.
+- **Alliés** : invitation par lien (alliance immédiate grâce à un code secret), recherche par pseudo, demandes à accepter. Les SOS des alliés passent en premier.
+- **Cercles** : groupes privés de 12 alliés maximum, avec classement des séries et discussion.
+- **Blocage** : une personne bloquée disparaît de ton fil et ne peut plus te demander en alliance.
+- **Administration** : l'adresse `jawad.elhamdani.pro@gmail.com` (e-mail vérifié, par exemple via la connexion Google) accède à l'espace **Moi → Administration** : chiffres clés, signalements, membres, suspension, nomination de modérateurs. L'adresse est inscrite dans `shared/roles.js` et `firestore.rules`.
 
 Tout cela fonctionne avec la **formule gratuite Firebase (Spark)**. La formule Blaze ajoute les rappels push planifiés (Cloud Functions).
 

@@ -171,3 +171,22 @@ describe('défi du jour', () => {
     expect(CHALLENGES).toContain(challengeOf('2030-01-01'));
   });
 });
+
+describe('statistiques utiles', () => {
+  it('projette les économies et compare les semaines', async () => {
+    const { computeExtraStats, allianceId } = await import('../shared/index.js');
+    const logs = [
+      { habitId: 'h1', type: 'use', at: NOW - 5 * DAY, quantity: 2 },
+      ...lunchCravings(),
+    ];
+    const x = computeExtraStats(habit, logs, NOW);
+    expect(x.projection.perDay).toBeCloseTo(15 - 2 / 14, 5);
+    expect(x.projection.year.money).toBeCloseTo((15 - 2 / 14) * 365 * 0.62, 3);
+    expect(x.week.cravings[0] + x.week.cravings[1]).toBeGreaterThan(0);
+    expect(x.dayparts.find((p) => p.id === 'aprem').count).toBeGreaterThan(0);
+    expect(x.calendar).toHaveLength(56);
+    expect(x.calendar.filter((c) => c.status === 'used')).toHaveLength(1);
+    expect(x.cleanDays).toBe(20);
+    expect(allianceId('b', 'a')).toBe('a_b');
+  });
+});

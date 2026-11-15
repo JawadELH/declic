@@ -3,7 +3,7 @@ rules_version = '2';
 // Règles de sécurité Déclic.
 // - Les données personnelles (habitudes, journal, notifications) ne sont lisibles que par leur propriétaire.
 // - L'état du moteur de notifications n'est écrit que par les Cloud Functions.
-// - Les compteurs sociaux (réactions, commentaires) sont tenus par les Cloud Functions.
+// - Administration : l'adresse ci-dessous (e-mail vérifié) est admin ; les modérateurs sont nommés dans /roles.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -11,6 +11,29 @@ service cloud.firestore {
     function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
     function str(v, min, max) { return v is string && v.size() >= min && v.size() <= max; }
     function nowMs() { return request.time.toMillis(); }
+
+    // ---------- Rôles ----------
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token.email == 'jawad.elhamdani.pro@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+    function isMod() {
+      return isAdmin() || (signedIn() && exists(/databases/$(database)/documents/roles/$(request.auth.uid)));
+    }
+    function notBanned() {
+      return !exists(/databases/$(database)/documents/bans/$(request.auth.uid));
+    }
+
+    match /roles/{uid} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /bans/{uid} {
+      allow read: if signedIn();
+      allow write: if isMod() && uid != request.auth.uid;
+    }
 
     // ---------- Données privées ----------
     match /users/{uid} {
@@ -46,6 +69,11 @@ service cloud.firestore {
         allow update: if false;
       }
 
+      // Personnes bloquées (liste privée).
+      match /blocked/{otherUid} {
+        allow read, write: if isOwner(uid);
+      }
+
       match /notifications/{notifId} {
         allow read, delete: if isOwner(uid);
         allow update: if isOwner(uid)
@@ -64,7 +92,9 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, update: if isOwner(uid)
         && str(request.resource.data.pseudo, 2, 30)
-        && str(request.resource.data.avatar, 1, 16);
+        && str(request.resource.data.avatar, 1, 16)
+        && (!('pseudoLower' in request.resource.data) || str(request.resource.data.pseudoLower, 2, 30))
+        && (!('card' in request.resource.data) || request.resource.data.card == null || request.resource.data.card is map);
       allow delete: if isOwner(uid);
     }
 
@@ -82,7 +112,7 @@ service cloud.firestore {
         && str(request.resource.data.text, 1, 1000)
         && request.resource.data.createdAt == request.time;
       allow update: if false;
-      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.authorId == request.auth.uid || isMod());
 
       match /reactions/{uid} {
         allow read: if signedIn();
@@ -118,7 +148,7 @@ service cloud.firestore {
     // Événements du fil : victoires, caps, défis, messages.
     match /activity/{activityId} {
       allow read: if signedIn();
-      allow create: if signedIn()
+      allow create: if signedIn() && notBanned()
         && request.resource.data.keys().hasOnly(['uid', 'pseudo', 'kind', 'habitId', 'habitLabel', 'text', 'createdAt'])
         && request.resource.data.uid == request.auth.uid
         && str(request.resource.data.pseudo, 1, 30)
@@ -133,7 +163,7 @@ service cloud.firestore {
         && resource.data.uid != request.auth.uid
         && existsAfter(/databases/$(database)/documents/activity/$(activityId)/cheers/$(request.auth.uid))
         && !exists(/databases/$(database)/documents/activity/$(activityId)/cheers/$(request.auth.uid));
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isMod());
 
       match /cheers/{uid} {
         allow read: if signedIn();
@@ -145,7 +175,7 @@ service cloud.firestore {
     // SOS en direct : visible 10 minutes, le groupe envoie de la force.
     match /sos/{sosId} {
       allow read: if signedIn();
-      allow create: if signedIn()
+      allow create: if signedIn() && notBanned()
         && request.resource.data.keys().hasOnly(['uid', 'pseudo', 'habitId', 'habitLabel', 'trigger', 'status', 'outcome', 'createdAt', 'expiresAt'])
         && request.resource.data.uid == request.auth.uid
         && str(request.resource.data.pseudo, 1, 30)
@@ -161,7 +191,7 @@ service cloud.firestore {
           && existsAfter(/databases/$(database)/documents/sos/$(sosId)/force/$(request.auth.uid))
           && !exists(/databases/$(database)/documents/sos/$(sosId)/force/$(request.auth.uid)))
       );
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isMod());
 
       match /force/{uid} {
         allow read: if signedIn();
@@ -209,7 +239,84 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.reporterId == request.auth.uid
         && str(request.resource.data.reason, 1, 200);
-      allow read, update, delete: if false; // consultés par la modération via la console / l'Admin SDK
+      allow read, delete: if isMod();
+      allow update: if false;
+    }
+
+    // ---------- Alliés (amis) ----------
+    // Identifiant = les deux uid triés, séparés par « _ ». Demande → acceptation par l'autre personne.
+    match /alliances/{allianceId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn() && notBanned()
+        && request.resource.data.keys().hasOnly(['members', 'from', 'to', 'fromPseudo', 'toPseudo', 'status', 'code', 'createdAt'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to != request.auth.uid
+        && request.resource.data.members.size() == 2
+        && request.resource.data.members.hasAll([request.auth.uid, request.resource.data.to])
+        && allianceId == (request.auth.uid < request.resource.data.to
+              ? request.auth.uid + '_' + request.resource.data.to
+              : request.resource.data.to + '_' + request.auth.uid)
+        && (request.resource.data.status == 'pending'
+          // Lien d'invitation : alliance immédiate si le code secret appartient bien à l'invitant.
+          || (request.resource.data.status == 'accepted'
+            && request.resource.data.code is string && request.resource.data.code.size() >= 12
+            && get(/databases/$(database)/documents/invites/$(request.resource.data.code)).data.uid == request.resource.data.to))
+        && str(request.resource.data.fromPseudo, 1, 30)
+        && str(request.resource.data.toPseudo, 1, 30)
+        && request.resource.data.createdAt == request.time
+        && !exists(/databases/$(database)/documents/users/$(request.resource.data.to)/blocked/$(request.auth.uid));
+      allow update: if signedIn() && resource.data.to == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status == 'accepted';
+      allow delete: if signedIn() && request.auth.uid in resource.data.members;
+    }
+
+    // Codes d'invitation (secrets, lisibles seulement par leur propriétaire).
+    match /invites/{code} {
+      allow read, delete: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create: if signedIn() && code.size() >= 12
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ---------- Cercles (groupes d'amis privés, 12 personnes max) ----------
+    match /circles/{circleId} {
+      function validCircle(d) {
+        return str(d.name, 1, 30) && d.members is list && d.members.size() >= 1 && d.members.size() <= 12
+          && d.ownerId in d.members;
+      }
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn() && notBanned()
+        && request.resource.data.keys().hasOnly(['name', 'ownerId', 'members', 'createdAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && validCircle(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && (
+        (resource.data.ownerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members'])
+          && validCircle(request.resource.data))
+        || (request.auth.uid in resource.data.members
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && request.resource.data.members.toSet() == resource.data.members.toSet().difference([request.auth.uid].toSet()))
+      );
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /messages/{messageId} {
+        function isMember() {
+          return signedIn() && request.auth.uid in get(/databases/$(database)/documents/circles/$(circleId)).data.members;
+        }
+        allow read: if isMember();
+        allow create: if isMember() && notBanned()
+          && request.resource.data.keys().hasOnly(['uid', 'pseudo', 'text', 'createdAt'])
+          && request.resource.data.uid == request.auth.uid
+          && str(request.resource.data.pseudo, 1, 30)
+          && str(request.resource.data.text, 1, 500)
+          && request.resource.data.createdAt == request.time;
+        allow update: if false;
+        allow delete: if signedIn() && (resource.data.uid == request.auth.uid || isMod());
+      }
     }
   }
 }
