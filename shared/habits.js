@@ -33,6 +33,7 @@ const COMMON_TIPS = [
 export const HABIT_TEMPLATES = {
   tabac: {
     id: 'tabac',
+    quickQty: [1, 2, 3, 5],
     usedWord: 'fumées',
     usedWordOne: 'fumée',
     cravingPhrase: 'l’envie de fumer',
@@ -65,6 +66,7 @@ export const HABIT_TEMPLATES = {
   },
   alcool: {
     id: 'alcool',
+    quickQty: [1, 2, 3, 4],
     usedWord: 'bus',
     usedWordOne: 'bu',
     cravingPhrase: 'l’envie de boire',
@@ -82,6 +84,7 @@ export const HABIT_TEMPLATES = {
   },
   sucre: {
     id: 'sucre',
+    quickQty: [1, 2, 3],
     usedWord: 'mangées',
     usedWordOne: 'mangée',
     cravingPhrase: 'l’envie de sucré',
@@ -96,6 +99,7 @@ export const HABIT_TEMPLATES = {
   },
   ecrans: {
     id: 'ecrans',
+    quickQty: [15, 30, 60, 120],
     usedWord: 'passées',
     usedWordOne: 'passée',
     cravingPhrase: 'l’envie de scroller',
@@ -110,6 +114,7 @@ export const HABIT_TEMPLATES = {
   },
   jeux: {
     id: 'jeux',
+    quickQty: [5, 10, 20, 50],
     usedWord: '',
     cravingPhrase: 'l’envie de jouer',
     label: "Jeux d'argent",
@@ -124,6 +129,7 @@ export const HABIT_TEMPLATES = {
   },
   ongles: {
     id: 'ongles',
+    quickQty: [1, 2, 3],
     usedWord: '',
     cravingPhrase: 'l’envie de te ronger les ongles',
     label: 'Ongles rongés',
@@ -137,6 +143,7 @@ export const HABIT_TEMPLATES = {
   },
   custom: {
     id: 'custom',
+    quickQty: [1, 2, 3, 5],
     usedWord: 'consommées',
     usedWordOne: 'consommée',
     label: 'Autre habitude',
@@ -166,7 +173,15 @@ export function milestonesOf(habit) {
 /** Déclencheurs proposés : ceux du modèle + ceux déjà saisis par l'utilisateur. */
 export function triggersOf(habit) {
   const t = templateOf(habit);
-  return Array.from(new Set([...(t.triggers ?? []), ...(habit?.customTriggers ?? [])]));
+  const hidden = new Set(habit?.hiddenTriggers ?? []);
+  // Les déclencheurs perso d'abord : ce sont ceux qu'on utilise vraiment.
+  return Array.from(new Set([...(habit?.customTriggers ?? []), ...(t.triggers ?? [])])).filter((x) => !hidden.has(x));
+}
+
+/** Quantités proposées en un appui quand on note une consommation (adaptées à l'unité). */
+export function qtyOptions(habit) {
+  const own = (habit?.quickQty ?? []).filter((n) => Number.isFinite(n) && n > 0);
+  return own.length ? own.slice(0, 5) : templateOf(habit).quickQty ?? [1, 2, 3, 5];
 }
 
 /** « l’envie de fumer », « l’envie de boire »… */

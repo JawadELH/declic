@@ -21,6 +21,7 @@ import {
   increment,
   runTransaction,
   arrayUnion,
+  arrayRemove,
   getCountFromServer,
   deleteField,
 } from 'firebase/firestore';
@@ -86,6 +87,11 @@ export async function searchProfiles(text) {
 // ---------- Habitudes ----------
 export function addHabit(uid, habit) {
   return addDoc(collection(db, 'users', uid, 'habits'), { ...habit, createdAt: serverTimestamp() });
+}
+
+/** Ajoute un déclencheur personnel à l'habitude (et le ré-affiche s'il avait été masqué). */
+export function addCustomTrigger(uid, habitId, trigger) {
+  return updateDoc(doc(db, 'users', uid, 'habits', habitId), { customTriggers: arrayUnion(trigger), hiddenTriggers: arrayRemove(trigger) });
 }
 
 export function updateHabit(uid, habitId, data) {

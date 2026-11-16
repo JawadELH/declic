@@ -9,10 +9,10 @@ import { usePulse, useSosSupport } from '../hooks/useGroup.js';
 import { useToast } from './Toast.jsx';
 import Avatar from './Avatar.jsx';
 import { Confetti, SurpriseCard, TreeArt } from './Rewards.jsx';
-import { closeSos, logResisted, logUse, publishActivity, saveBadge, startSos } from '../lib/db.js';
+import { addCustomTrigger, closeSos, logResisted, logUse, publishActivity, saveBadge, startSos } from '../lib/db.js';
 import { buzz } from '../lib/ui.js';
 import { money } from '../lib/format.js';
-import { cravingPhrase, formatDuration, MINUTE, treeStage, triggersOf } from '../../shared/index.js';
+import { cravingPhrase, formatDuration, MINUTE, qtyOptions, treeStage, triggersOf } from '../../shared/index.js';
 
 const TOTAL = 90; // secondes : une envie redescend en général en quelques minutes
 const PHASE = 4;
@@ -132,15 +132,7 @@ export default function CravingFlow({ habit, stats, mode = 'craving', initialSte
               )}
             </div>
           ) : (
-            <div className="chips center">
-              {triggersOf(habit)
-                .slice(0, 6)
-                .map((x) => (
-                  <button key={x} className={`chip ${trigger === x ? 'on' : ''}`} onClick={() => setTrigger(trigger === x ? null : x)} aria-pressed={trigger === x}>
-                    {x}
-                  </button>
-                ))}
-            </div>
+            <TriggerChips habit={habit} uid={user.uid} value={trigger} onChange={setTrigger} />
           )}
 
           <div className="flow-actions">
@@ -201,13 +193,30 @@ export default function CravingFlow({ habit, stats, mode = 'craving', initialSte
         <div className="flow-body center-col">
           <h1 className="win-title">Combien ?</h1>
           <p className="muted">{habit.unitPlural}</p>
+          {mode === 'slip' && (
+            <>
+              <p className="muted small">Dans quel contexte ? (facultatif)</p>
+              <TriggerChips habit={habit} uid={user.uid} value={trigger} onChange={setTrigger} />
+            </>
+          )}
           <div className="qty">
-            {[1, 2, 3, 5].map((q) => (
+            {qtyOptions(habit).map((q) => (
               <button key={q} className="qty-btn" onClick={() => slipped(q)}>
                 {q}
               </button>
             ))}
           </div>
+          <form
+            className="row qty-other"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const q = Number(new FormData(e.currentTarget).get('q'));
+              if (q > 0 && q < 10000) slipped(q);
+            }}
+          >
+            <input name="q" type="number" min="0.1" step="any" inputMode="decimal" placeholder="Autre" aria-label={`Autre quantité (${habit.unitPlural})`} />
+            <button className="btn ghost">OK</button>
+          </form>
           <p className="muted small">Sans jugement : ça sert à mieux t’aider.</p>
         </div>
       )}
@@ -225,6 +234,41 @@ export default function CravingFlow({ habit, stats, mode = 'craving', initialSte
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Déclencheurs en un appui, avec « + Autre » pour ajouter le sien (gardé pour la suite). */
+function TriggerChips({ habit, uid, value, onChange }) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState('');
+  const list = triggersOf(habit).slice(0, 8);
+  if (value && !list.includes(value)) list.unshift(value);
+  function add(e) {
+    e.preventDefault();
+    const t = text.trim().slice(0, 30);
+    if (!t) return setAdding(false);
+    addCustomTrigger(uid, habit.id, t).catch(() => {});
+    onChange(t);
+    setText('');
+    setAdding(false);
+  }
+  return (
+    <div className="chips center">
+      {list.map((x) => (
+        <button key={x} className={`chip ${value === x ? 'on' : ''}`} onClick={() => onChange(value === x ? null : x)} aria-pressed={value === x}>
+          {x}
+        </button>
+      ))}
+      {adding ? (
+        <form className="chip-add" onSubmit={add}>
+          <input autoFocus maxLength={30} value={text} onChange={(e) => setText(e.target.value)} onBlur={add} placeholder="Ton déclencheur" aria-label="Nouveau déclencheur" />
+        </form>
+      ) : (
+        <button className="chip ghost-chip" onClick={() => setAdding(true)}>
+          + Autre
+        </button>
       )}
     </div>
   );

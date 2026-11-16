@@ -14,7 +14,7 @@ import { useSocial } from '../hooks/useSocial.jsx';
 import { shareInvite } from './Allies.jsx';
 import { disablePush, enablePush, pushSupported, showLocalTest } from '../lib/messaging.js';
 import { habitIcon } from '../lib/ui.js';
-import { DEFAULT_PREFS, NOTIF_LEVELS } from '../../shared/index.js';
+import { DEFAULT_PREFS, NOTIF_LEVELS, qtyOptions, templateOf, triggersOf } from '../../shared/index.js';
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
@@ -274,11 +274,20 @@ function BlockedList({ uid, ids }) {
   );
 }
 
+/** Liste saisie → déclencheurs perso + modèles masqués. */
+function triggerPatch(h, text) {
+  const list = Array.from(new Set(text.split(',').map((x) => x.trim().slice(0, 30)).filter(Boolean))).slice(0, 20);
+  const tpl = templateOf(h).triggers ?? [];
+  return { customTriggers: list.filter((x) => !tpl.includes(x)), hiddenTriggers: tpl.filter((x) => !list.includes(x)) };
+}
+
 function HabitRow({ habit, uid, canArchive }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [restart, setRestart] = useState(false);
   const [h, setH] = useState(habit);
+  const [trig, setTrig] = useState(() => triggersOf(habit).join(', '));
+  const [qty, setQty] = useState(() => qtyOptions(habit).join(', '));
   const Icon = habitIcon(habit.templateId);
   const set = (k) => (e) => setH((x) => ({ ...x, [k]: e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
   async function save(e) {
@@ -288,6 +297,12 @@ function HabitRow({ habit, uid, canArchive }) {
       baselinePerDay: h.baselinePerDay,
       targetPerDay: h.targetPerDay,
       plan: planToSave(h),
+      ...triggerPatch(h, trig),
+      quickQty: qty
+        .split(/[,;\s]+/)
+        .map(Number)
+        .filter((n) => n > 0 && n < 10000)
+        .slice(0, 5),
       costPerUnit: h.costPerUnit,
       motivation: (h.motivation ?? '').slice(0, 300),
     });
@@ -321,6 +336,14 @@ function HabitRow({ habit, uid, canArchive }) {
             </label>
           )}
           {h.mode === 'reduce' && <PlanFields habit={h} onChange={(plan) => setH((x) => ({ ...x, plan }))} />}
+          <label className="full">
+            Mes déclencheurs (séparés par des virgules)
+            <input value={trig} onChange={(e) => setTrig(e.target.value)} placeholder="Café, Stress, Pause" />
+          </label>
+          <label className="full">
+            Quantités rapides quand je note une conso
+            <input value={qty} onChange={(e) => setQty(e.target.value)} placeholder="1, 2, 3, 5" />
+          </label>
           <label>
             Prix par {h.unit} (€)
             <input type="number" min="0" step="0.01" value={h.costPerUnit} onChange={set('costPerUnit')} />

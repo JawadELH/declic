@@ -533,3 +533,8 @@ th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var
 .plan-steps span { flex: 1; height: 6px; border-radius: 99px; background: var(--surface-2); }
 .plan-steps span.done { background: var(--accent-ring); }
 .plan-steps span.on { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+.ghost-chip { border-style: dashed; color: var(--text-secondary); background: transparent; }
+.chip-add input { font: inherit; font-size: 0.92rem; padding: 0.45rem 0.9rem; border-radius: 999px; border: 1px solid var(--accent); width: 11rem; }
+.qty-other { justify-content: center; }
+.qty-other input { width: 7rem; text-align: center; }
