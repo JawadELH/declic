@@ -7,11 +7,11 @@ import { useSocial } from '../hooks/useSocial.jsx';
 import CravingFlow from '../components/CravingFlow.jsx';
 import Sheet from '../components/Sheet.jsx';
 import { Celebration, TreeCard } from '../components/Rewards.jsx';
-import { goalReached, publishActivity, setHabitGoal } from '../lib/db.js';
+import { goalReached, publishActivity, setHabitGoal, updateHabit } from '../lib/db.js';
 import { habitIcon, buzz } from '../lib/ui.js';
 import { money, num } from '../lib/format.js';
 import {
-  buildRiskProfile, computeHabitStats, dayKey, DAY, goalProgress, HOUR, localParts, MINUTE, riskAt, tipsOf, usedLabel, weekKey, weeklyRecap,
+  buildRiskProfile, computeHabitStats, planInfo, targetAt, dayKey, DAY, goalProgress, HOUR, localParts, MINUTE, riskAt, tipsOf, usedLabel, weekKey, weeklyRecap,
 } from '../../shared/index.js';
 
 const store = {
@@ -146,7 +146,8 @@ export default function Today() {
   const days = Math.floor(stats.streakMs / DAY);
   const hours = Math.floor((stats.streakMs % DAY) / HOUR);
   const mins = Math.floor((stats.streakMs % HOUR) / MINUTE);
-  const target = habit.targetPerDay || 0;
+  const target = targetAt(habit, now);
+  const plan = planInfo(habit, now);
   const left = Math.max(0, target - stats.todayUsed);
 
   function nextHabit() {
@@ -261,6 +262,30 @@ export default function Today() {
               ? `Objectif dépassé de ${num(stats.todayUsed - target, 1)} aujourd’hui. Demain est une autre page.`
               : `${stats.daysOnTarget} jour${stats.daysOnTarget > 1 ? 's' : ''} d’affilée dans ton objectif`}
         </p>
+        {plan && (
+          <div className="plan-strip" aria-label={`Palier ${plan.index} sur ${plan.steps}`}>
+            <div className="plan-steps">
+              {plan.ladder.map((v, i) => (
+                <span key={i} className={i < plan.index - 1 ? 'done' : i === plan.index - 1 ? 'on' : ''} title={`${num(v, 1)} par jour`} />
+              ))}
+            </div>
+            <p className="small muted">
+              {plan.done ? (
+                <>
+                  Dernier palier : zéro.{' '}
+                  <button
+                    className="link"
+                    onClick={() => updateHabit(user.uid, habit.id, { mode: 'quit', plan: null }).catch(() => {})}
+                  >
+                    Passer en arrêt total
+                  </button>
+                </>
+              ) : (
+                `Palier ${plan.index}/${plan.steps} · max ${num(plan.current, 1)} par jour · ${num(plan.next, 1)} dans ${plan.daysToNext} j`
+              )}
+            </p>
+          </div>
+        )}
       </section>
 
       <Link to="/historique" className="bilan" aria-label="Voir l’historique détaillé">

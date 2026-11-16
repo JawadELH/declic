@@ -8,6 +8,8 @@ import { useToast } from '../components/Toast.jsx';
 import Avatar from '../components/Avatar.jsx';
 import { deleteMyAccount, exportMyData, getProfile, resetAllData, resetHabit, saveProfile, unblockUser, updateHabit, updateUser } from '../lib/db.js';
 import DevPanel, { useDevMode } from '../components/DevPanel.jsx';
+import { Toggle } from '../components/Toggle.jsx';
+import PlanFields, { planToSave } from '../components/PlanFields.jsx';
 import { useSocial } from '../hooks/useSocial.jsx';
 import { shareInvite } from './Allies.jsx';
 import { disablePush, enablePush, pushSupported, showLocalTest } from '../lib/messaging.js';
@@ -272,16 +274,6 @@ function BlockedList({ uid, ids }) {
   );
 }
 
-function Toggle({ checked, onChange, label }) {
-  return (
-    <label className="toggle">
-      <span>{label}</span>
-      <input type="checkbox" role="switch" checked={!!checked} onChange={(e) => onChange(e.target.checked)} />
-      <span className="toggle-ui" aria-hidden />
-    </label>
-  );
-}
-
 function HabitRow({ habit, uid, canArchive }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -295,6 +287,7 @@ function HabitRow({ habit, uid, canArchive }) {
       mode: h.mode,
       baselinePerDay: h.baselinePerDay,
       targetPerDay: h.targetPerDay,
+      plan: planToSave(h),
       costPerUnit: h.costPerUnit,
       motivation: (h.motivation ?? '').slice(0, 300),
     });
@@ -327,6 +320,7 @@ function HabitRow({ habit, uid, canArchive }) {
               <input type="number" min="0" step="any" value={h.targetPerDay} onChange={set('targetPerDay')} />
             </label>
           )}
+          {h.mode === 'reduce' && <PlanFields habit={h} onChange={(plan) => setH((x) => ({ ...x, plan }))} />}
           <label>
             Prix par {h.unit} (€)
             <input type="number" min="0" step="0.01" value={h.costPerUnit} onChange={set('costPerUnit')} />

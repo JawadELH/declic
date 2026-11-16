@@ -1,6 +1,6 @@
 // Calcul des statistiques d'une habitude : série, économies, envies, paliers…
 import { DAY, MINUTE, dayKey, startOfDay, DOW_LONG } from './time.js';
-import { milestonesOf } from './habits.js';
+import { milestonesOf, targetAt } from './habits.js';
 
 const sum = (arr) => arr.reduce((a, b) => a + b, 0);
 const qty = (l) => (Number.isFinite(l.quantity) && l.quantity > 0 ? l.quantity : 1);
@@ -42,12 +42,11 @@ export function computeHabitStats(habit, logs, now = Date.now(), { days = 30 } =
   // Mode réduction : jours consécutifs sous l'objectif (aujourd'hui compris s'il est encore dans les clous)
   let daysOnTarget = 0;
   if (habit.mode === 'reduce') {
-    const target = habit.targetPerDay ?? 0;
     let cursor = startOfDay(now);
     const firstDay = startOfDay(start);
-    if (todayUsed > target) daysOnTarget = 0;
+    if (todayUsed > targetAt(habit, now)) daysOnTarget = 0;
     else {
-      while (cursor >= firstDay && (usedByDay.get(dayKey(cursor)) ?? 0) <= target) {
+      while (cursor >= firstDay && (usedByDay.get(dayKey(cursor)) ?? 0) <= targetAt(habit, cursor + DAY / 2)) {
         daysOnTarget++;
         cursor = startOfDay(cursor - DAY / 2);
       }

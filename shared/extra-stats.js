@@ -1,5 +1,6 @@
 // Statistiques « utiles » : projections, comparaison de semaines, moments de la journée, calendrier.
 import { DAY, dayKey, startOfDay } from './time.js';
+import { targetAt } from './habits.js';
 
 const qty = (l) => (Number.isFinite(l.quantity) && l.quantity > 0 ? l.quantity : 1);
 
@@ -73,13 +74,13 @@ export function computeExtraStats(habit, logs, now = Date.now()) {
     let status;
     if (d > today0) status = 'future';
     else if (d < startDay) status = 'before';
-    else if (habit.mode === 'reduce') status = used <= (habit.targetPerDay ?? 0) ? 'ok' : 'over';
+    else if (habit.mode === 'reduce') status = used <= targetAt(habit, d) ? 'ok' : 'over';
     else status = used > 0 ? 'used' : 'clean';
     calendar.push({ key, day: new Date(d).getDate(), status });
   }
   for (let d = startDay; d <= today0; d = startOfDay(d + DAY + DAY / 2)) {
     const used = usedByDay.get(dayKey(d)) ?? 0;
-    if (habit.mode === 'reduce' ? used <= (habit.targetPerDay ?? 0) : used === 0) cleanDays++;
+    if (habit.mode === 'reduce' ? used <= targetAt(habit, d) : used === 0) cleanDays++;
   }
 
   return { projection, week, dayparts, calendar, cleanDays };

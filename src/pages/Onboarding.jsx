@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IconArrowLeft, IconBell, IconMinus, IconPlus } from '@tabler/icons-react';
 import { useAppData } from '../hooks/useAppData.jsx';
+import PlanFields, { planToSave } from '../components/PlanFields.jsx';
 import { addHabit, publishActivity, saveProfile, updateUser } from '../lib/db.js';
 import { enablePush, pushSupported } from '../lib/messaging.js';
 import { habitIcon } from '../lib/ui.js';
@@ -38,7 +39,7 @@ export default function Onboarding({ first = false }) {
       if (needsProfile) await saveProfile(user.uid, { pseudo });
       const motivation = [reasons.join(', '), habit.motivation?.trim()].filter(Boolean).join(' — ').slice(0, 300);
       const startedAt = already ? Math.min(Date.now(), new Date(startAt).getTime()) : Date.now();
-      const h = { ...habit, motivation, startedAt };
+      const h = { ...habit, motivation, startedAt, plan: planToSave(habit) };
       await addHabit(user.uid, h);
       await updateUser(user.uid, { onboarded: true });
       if (userDoc?.shareActivity !== false) publishActivity(user.uid, { pseudo: pseudo || profile?.pseudo }, { kind: 'start', habit: h }).catch(() => {});
@@ -159,6 +160,7 @@ export default function Onboarding({ first = false }) {
               <input type="number" min="0" step="any" value={habit.targetPerDay} onChange={(e) => set('targetPerDay', Number(e.target.value))} />
             </label>
           )}
+          {habit.mode === 'reduce' && <PlanFields habit={habit} onChange={(plan) => set('plan', plan)} />}
           {tpl?.warning && <p className="warning small">{tpl.warning}</p>}
           <button className="btn primary xl">Continuer</button>
         </form>

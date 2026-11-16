@@ -205,3 +205,39 @@ export function newHabitFromTemplate(templateId, overrides = {}) {
     ...overrides,
   };
 }
+
+/* ---------- Arrêt progressif par paliers ----------
+ * habit.plan = { start, from, step, stepDays } : le maximum par jour démarre à `from`
+ * et baisse de `step` tous les `stepDays` jours, jusqu'à 0. */
+const PLAN_DAY = 86400000;
+
+/** Maximum autorisé au moment `ts` (palier en cours, ou objectif fixe sans plan). */
+export function targetAt(habit, ts = Date.now()) {
+  const p = habit?.plan;
+  if (!p || habit.mode !== 'reduce') return habit?.targetPerDay ?? 0;
+  const k = Math.max(0, Math.floor((ts - p.start) / (p.stepDays * PLAN_DAY)));
+  return Math.max(0, Math.round((p.from - k * p.step) * 100) / 100);
+}
+
+/** Où on en est du plan : palier courant, prochain palier, date d'arrêt complet. */
+export function planInfo(habit, now = Date.now()) {
+  const p = habit?.plan;
+  if (!p || habit.mode !== 'reduce' || !(p.step > 0) || !(p.stepDays > 0)) return null;
+  const len = p.stepDays * PLAN_DAY;
+  const steps = Math.ceil(p.from / p.step) + 1; // le dernier palier est 0
+  const index = Math.min(steps - 1, Math.max(0, Math.floor((now - p.start) / len)));
+  const current = targetAt(habit, now);
+  const done = current === 0;
+  const nextAt = done ? null : p.start + (index + 1) * len;
+  return {
+    index: index + 1,
+    steps,
+    current,
+    next: done ? null : Math.max(0, Math.round((current - p.step) * 100) / 100),
+    nextAt,
+    daysToNext: done ? 0 : Math.ceil((nextAt - now) / PLAN_DAY),
+    endAt: p.start + (steps - 1) * len,
+    done,
+    ladder: Array.from({ length: steps }, (_, i) => Math.max(0, Math.round((p.from - i * p.step) * 100) / 100)),
+  };
+}

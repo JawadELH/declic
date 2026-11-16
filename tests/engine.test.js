@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
+import { targetAt, planInfo,
   DAY,
   HOUR,
   MINUTE,
@@ -210,5 +210,21 @@ describe('récompenses', () => {
     expect(usedLabel(habit, 1)).toBe('cigarette fumée');
     expect(usedLabel(newHabitFromTemplate('jeux'))).toBe('euros misés');
     expect(weekKey(Date.UTC(2026, 10, 18, 12))).toBe('2026-11-16');
+  });
+});
+
+describe('arrêt progressif', () => {
+  it('baisse le maximum par paliers jusqu’à zéro', () => {
+    const D = 86400000;
+    const h = { mode: 'reduce', targetPerDay: 10, plan: { start: 0, from: 10, step: 3, stepDays: 7 } };
+    expect(targetAt(h, 0)).toBe(10);
+    expect(targetAt(h, 7 * D)).toBe(7);
+    expect(targetAt(h, 40 * D)).toBe(0);
+    const p = planInfo(h, 8 * D);
+    expect(p.ladder).toEqual([10, 7, 4, 1, 0]);
+    expect(p.index).toBe(2);
+    expect(p.next).toBe(4);
+    expect(p.daysToNext).toBe(6);
+    expect(planInfo(h, 30 * D).done).toBe(true);
   });
 });
