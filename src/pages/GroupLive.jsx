@@ -34,7 +34,8 @@ export default function GroupLive() {
     if (took) return;
     setTook(true);
     buzz([20]);
-    await takeChallenge(user.uid, key).catch(() => setTook(false));
+    // Si l'écriture échoue (déjà relevé, hors ligne…), on revérifie au lieu de décocher à tort.
+    await takeChallenge(user.uid, key).catch(() => hasTakenChallenge(user.uid, key).then(setTook).catch(() => {}));
     publishActivity(user.uid, profile, { kind: 'challenge', habit: habits[0] }).catch(() => {});
   }
 

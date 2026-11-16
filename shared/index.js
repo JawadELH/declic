@@ -7,3 +7,4 @@ export * from './nudges.js';
 export * from './challenges.js';
 export * from './extra-stats.js';
 export * from './roles.js';
+export * from './rewards.js';

@@ -190,3 +190,25 @@ describe('statistiques utiles', () => {
     expect(allianceId('b', 'a')).toBe('a_b');
   });
 });
+
+describe('récompenses', () => {
+  it('fait pousser l’arbre et tire des cartes', async () => {
+    const { treeStage, drawCard, goalProgress, weeklyRecap, usedLabel, newHabitFromTemplate, weekKey } = await import('../shared/index.js');
+    expect(treeStage(0).name).toBe('Graine');
+    expect(treeStage(8)).toMatchObject({ name: 'Arbuste', toNext: 7 });
+    expect(treeStage(500).next).toBeNull();
+    expect(drawCard(habit, { rng: () => 0.01 }).kind).toBe('rare');
+    expect(drawCard(habit, { rng: () => 0.2 }).kind).toBe('sante');
+    expect(drawCard(habit, { rng: () => 0.5, pulse: 12 }).kind).toBe('collectif');
+    expect(drawCard(habit, { rng: () => 0.9 }).kind).toBe('mot');
+    expect(goalProgress(150, { amount: 300, base: 50 })).toMatchObject({ saved: 100, remaining: 200, reached: false });
+    expect(goalProgress(400, { amount: 300, base: 50 }).reached).toBe(true);
+    const r = weeklyRecap(habit, lunchCravings(), NOW);
+    expect(r.cur.won).toBeGreaterThan(0);
+    expect(r.cur.money).toBeCloseTo(15 * 7 * 0.62, 5);
+    expect(usedLabel(habit)).toBe('cigarettes fumées');
+    expect(usedLabel(habit, 1)).toBe('cigarette fumée');
+    expect(usedLabel(newHabitFromTemplate('jeux'))).toBe('euros misés');
+    expect(weekKey(Date.UTC(2026, 10, 18, 12))).toBe('2026-11-16');
+  });
+});

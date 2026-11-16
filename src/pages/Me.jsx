@@ -6,7 +6,8 @@ import { auth } from '../firebase.js';
 import { useAppData } from '../hooks/useAppData.jsx';
 import { useToast } from '../components/Toast.jsx';
 import Avatar from '../components/Avatar.jsx';
-import { deleteMyAccount, exportMyData, getProfile, saveProfile, unblockUser, updateHabit, updateUser } from '../lib/db.js';
+import { deleteMyAccount, exportMyData, getProfile, resetAllData, resetHabit, saveProfile, unblockUser, updateHabit, updateUser } from '../lib/db.js';
+import DevPanel, { useDevMode } from '../components/DevPanel.jsx';
 import { useSocial } from '../hooks/useSocial.jsx';
 import { shareInvite } from './Allies.jsx';
 import { disablePush, enablePush, pushSupported, showLocalTest } from '../lib/messaging.js';
@@ -16,12 +17,14 @@ import { DEFAULT_PREFS, NOTIF_LEVELS } from '../../shared/index.js';
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 export default function Me() {
-  const { user, userDoc, profile, habits, unread } = useAppData();
+  const { user, userDoc, profile, habits, unread, engine } = useAppData();
   const toast = useToast();
   const prefs = { ...DEFAULT_PREFS, ...(userDoc?.notifPrefs ?? {}) };
   const [pseudo, setPseudo] = useState(profile?.pseudo ?? '');
   const [canPush, setCanPush] = useState(false);
   const [confirm, setConfirm] = useState('');
+  const [confirmReset, setConfirmReset] = useState('');
+  const [dev, tapVersion] = useDevMode();
   const social = useSocial();
   const needsVerify = user.providerData?.some((p) => p.providerId === 'password') && !user.emailVerified;
 
@@ -151,6 +154,12 @@ export default function Me() {
           </label>
         </div>
         <Toggle checked={prefs.milestones} onChange={(v) => setPref('milestones', v)} label="Fêter mes caps" />
+        {engine === null && (
+          <p className="notice small">
+            Les rappels <b>push automatiques</b> (téléphone verrouillé) nécessitent la formule Blaze de Firebase. En attendant, Déclic t’affiche ses rappels
+            directement dans l’app, avant tes moments délicats.
+          </p>
+        )}
         {canPush ? (
           <div className="row wrap">
             <button className="btn ghost" onClick={togglePush}>
@@ -205,6 +214,23 @@ export default function Me() {
           </button>
         </div>
         <details className="danger">
+          <summary>Tout réinitialiser</summary>
+          <p className="small">
+            Efface tes habitudes, ton historique et tes notifications, puis te ramène au démarrage. Ton compte, ton pseudo, tes alliés et tes cercles sont conservés.
+            Tape RÉINITIALISER pour confirmer.
+          </p>
+          <div className="row">
+            <input className="grow" value={confirmReset} onChange={(e) => setConfirmReset(e.target.value)} aria-label="Confirmation de réinitialisation" />
+            <button
+              className="btn danger"
+              disabled={confirmReset !== 'RÉINITIALISER' && confirmReset !== 'REINITIALISER'}
+              onClick={() => resetAllData(user.uid).then(() => toast('Tout est remis à zéro. Nouveau départ !'))}
+            >
+              Réinitialiser
+            </button>
+          </div>
+        </details>
+        <details className="danger">
           <summary>Supprimer mon compte</summary>
           <p className="small">Tout sera effacé définitivement. Tape SUPPRIMER pour confirmer.</p>
           <div className="row">
@@ -215,6 +241,13 @@ export default function Me() {
           </div>
         </details>
       </section>
+
+      {(dev || social.isAdmin) && <DevPanel />}
+
+      <button className="version" onClick={tapVersion}>
+        Déclic v{__APP_VERSION__}
+        {dev ? ' · mode développeur' : ''}
+      </button>
     </div>
   );
 }
@@ -252,6 +285,7 @@ function Toggle({ checked, onChange, label }) {
 function HabitRow({ habit, uid, canArchive }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [restart, setRestart] = useState(false);
   const [h, setH] = useState(habit);
   const Icon = habitIcon(habit.templateId);
   const set = (k) => (e) => setH((x) => ({ ...x, [k]: e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
@@ -306,6 +340,17 @@ function HabitRow({ habit, uid, canArchive }) {
             {canArchive && (
               <button type="button" className="btn ghost" onClick={() => updateHabit(uid, habit.id, { active: false })}>
                 Archiver
+              </button>
+            )}
+          </div>
+          <div className="full">
+            {restart ? (
+              <button type="button" className="btn danger" onClick={() => resetHabit(uid, habit.id).then(() => toast('Habitude remise à zéro, départ maintenant.'))}>
+                Confirmer : effacer l’historique et repartir de zéro
+              </button>
+            ) : (
+              <button type="button" className="link danger-link" onClick={() => setRestart(true)}>
+                Recommencer cette habitude
               </button>
             )}
           </div>

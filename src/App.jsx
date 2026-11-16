@@ -15,6 +15,7 @@ import InviteAlly from './pages/InviteAlly.jsx';
 import Me from './pages/Me.jsx';
 import Admin from './pages/Admin.jsx';
 import Notifications from './pages/Notifications.jsx';
+import History from './pages/History.jsx';
 
 export default function App() {
   const { user, habits, loading } = useAppData();
@@ -61,6 +62,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Today />} />
         <Route path="progres" element={<Progress />} />
+        <Route path="historique" element={<History />} />
         <Route path="groupe" element={<Group />} />
         <Route path="cercle/:id" element={<CirclePage />} />
         <Route path="allie/:uid" element={<InviteAlly />} />

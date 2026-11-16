@@ -31,6 +31,15 @@ npm run deploy:gratuit
 
 ---
 
+## Nouveautés v1.2
+
+- **Bilan sur l’écran d’accueil** : envies battues et consommations du jour et depuis le début, argent gardé qui défile en direct. Touche le bilan pour ouvrir l’**historique** jour par jour (suppression d’une entrée saisie par erreur).
+- **Récompenses** : tirelire (objectif concret à s’offrir), arbre qui grandit à chaque envie battue, carte surprise après chaque victoire (avec une collection rare), bilan de la semaine, bravos reçus du groupe.
+- **Rappels dans l’app** avant tes moments délicats (fonctionne avec la formule gratuite Spark).
+- **Réinitialisation** : « Recommencer cette habitude » (dans Moi › Mes habitudes) ou « Tout réinitialiser » (Moi › Mes données).
+- **Mode développeur** : visible d’office pour le compte admin, et pour tout le monde après 7 appuis rapides sur le numéro de version en bas de Moi. Il permet de générer 7, 30 ou 90 jours d’historique de démo, de reculer la date de départ, de prévisualiser les écrans de victoire et de célébration, puis de tout nettoyer. Les données de démo ne sont jamais publiées dans le groupe.
+- **Hors ligne** : l’application s’ouvre sans réseau une fois visitée ; les saisies sont synchronisées au retour de la connexion.
+
 ## Fonctionnalités détaillées
 
 ### Suivi personnel

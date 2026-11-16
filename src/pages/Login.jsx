@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  getRedirectResult,
   sendPasswordResetEmail,
+  signInWithRedirect,
   signInWithEmailAndPassword,
   signInWithPopup,
 } from 'firebase/auth';
@@ -13,7 +15,23 @@ const ERRORS = {
   'auth/weak-password': 'Mot de passe trop court (6 caractères minimum).',
   'auth/invalid-email': 'Adresse email invalide.',
   'auth/popup-closed-by-user': 'Connexion annulée.',
+  'auth/unauthorized-domain': 'Ce domaine n’est pas autorisé dans Firebase (Authentication → Paramètres → Domaines autorisés).',
 };
+
+// Sur iPhone, une app installée sur l'écran d'accueil bloque souvent les fenêtres de connexion : on passe par une redirection.
+const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+async function signInWithGoogle() {
+  if (isStandalone()) return signInWithRedirect(auth, googleProvider);
+  try {
+    return await signInWithPopup(auth, googleProvider);
+  } catch (e) {
+    if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/cancelled-popup-request'].includes(e.code)) {
+      return signInWithRedirect(auth, googleProvider);
+    }
+    throw e;
+  }
+}
 
 export default function Login() {
   const [mode, setMode] = useState('login');
@@ -21,6 +39,10 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getRedirectResult(auth).catch((e) => setMsg({ error: true, text: ERRORS[e.code] ?? e.message }));
+  }, []);
 
   async function run(fn) {
     setBusy(true);
@@ -70,7 +92,7 @@ export default function Login() {
         <button className="btn primary xl" disabled={busy}>
           {mode === 'login' ? 'Se connecter' : 'Créer mon compte'}
         </button>
-        <button type="button" className="btn ghost" disabled={busy} onClick={() => run(() => signInWithPopup(auth, googleProvider))}>
+        <button type="button" className="btn ghost" disabled={busy} onClick={() => run(signInWithGoogle)}>
           Continuer avec Google
         </button>
         <div className="row between small">

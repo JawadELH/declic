@@ -57,12 +57,13 @@ service cloud.firestore {
         function validLog(d) {
           return str(d.habitId, 1, 128)
             && d.type in ['craving', 'use']
-            && d.at is number && d.at <= nowMs() + 60000 && d.at > nowMs() - 7 * 86400000
+            && d.at is number && d.at <= nowMs() + 60000 && d.at > nowMs() - 400 * 86400000
             && d.localHour is int && d.localHour >= 0 && d.localHour <= 23
             && d.localDow is int && d.localDow >= 0 && d.localDow <= 6
             && (d.type != 'craving' || (d.intensity is int && d.intensity >= 1 && d.intensity <= 5 && d.resisted is bool))
             && (d.type != 'use' || (d.quantity is number && d.quantity > 0 && d.quantity < 10000))
-            && (!('note' in d) || str(d.note, 0, 280));
+            && (!('note' in d) || str(d.note, 0, 280))
+            && (!('demo' in d) || d.demo is bool);
         }
         allow read, delete: if isOwner(uid);
         allow create: if isOwner(uid) && validLog(request.resource.data);

@@ -22,6 +22,7 @@ import {
   runTransaction,
   arrayUnion,
   getCountFromServer,
+  deleteField,
 } from 'firebase/firestore';
 import { deleteUser } from 'firebase/auth';
 import { auth, db } from '../firebase.js';
@@ -157,9 +158,10 @@ export async function hasCheered(activityId, uid) {
   return (await getDoc(doc(db, 'activity', activityId, 'cheers', uid))).exists();
 }
 
-/** Lance un SOS visible par tout le groupe pendant 10 minutes. */
-export async function startSos(uid, profile, habit, trigger) {
-  const ref = await addDoc(collection(db, 'sos'), {
+/** Lance un SOS visible par tout le groupe pendant 10 minutes (renvoie son identifiant tout de suite). */
+export function startSos(uid, profile, habit, trigger, onError = () => {}) {
+  const ref = doc(collection(db, 'sos'));
+  setDoc(ref, {
     uid,
     pseudo: profile?.pseudo || 'Membre',
     habitId: habit?.templateId ?? 'custom',
@@ -169,8 +171,13 @@ export async function startSos(uid, profile, habit, trigger) {
     outcome: null,
     createdAt: serverTimestamp(),
     expiresAt: Date.now() + SOS_DURATION,
-  });
+  }).catch(onError);
   return ref.id;
+}
+
+/** Badge rare gagné grâce à une carte surprise (collection). */
+export function saveBadge(uid, badgeId) {
+  return updateDoc(doc(db, 'users', uid), { [`badges.${badgeId}`]: increment(1) });
 }
 
 export function closeSos(sosId, outcome) {
@@ -346,6 +353,119 @@ export async function markAllRead(uid, notifs) {
   await batch.commit();
 }
 
+// ---------- Réinitialisation et mode développeur ----------
+async function deleteRefs(refs) {
+  for (let i = 0; i < refs.length; i += 400) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + 400).forEach((r) => batch.delete(r));
+    await batch.commit();
+  }
+}
+
+/** Recommencer une habitude : efface son historique et repart d'aujourd'hui. */
+export async function resetHabit(uid, habitId) {
+  const logs = await getDocs(query(collection(db, 'users', uid, 'logs'), where('habitId', '==', habitId)));
+  await deleteRefs(logs.docs.map((d) => d.ref));
+  await updateDoc(doc(db, 'users', uid, 'habits', habitId), { startedAt: Date.now(), lastUseAt: deleteField(), goal: deleteField() });
+  try {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('declic.ms.') || k.startsWith('declic.goal.'))
+      .forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* indisponible */
+  }
+}
+
+/** Tout réinitialiser : habitudes, historique, notifications. Le compte, le pseudo et les alliés sont conservés. */
+export async function resetAllData(uid) {
+  const refs = [
+    ...(await getDocs(collection(db, 'users', uid, 'logs'))).docs,
+    ...(await getDocs(collection(db, 'users', uid, 'notifications'))).docs,
+    ...(await getDocs(collection(db, 'users', uid, 'habits'))).docs,
+  ].map((d) => d.ref);
+  await deleteRefs(refs);
+  await updateDoc(doc(db, 'users', uid), { onboarded: false, badges: deleteField() });
+  await setDoc(doc(db, 'profiles', uid), { card: null }, { merge: true }).catch(() => {});
+  try {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('declic.') && k !== 'declic.dev')
+      .forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* indisponible */
+  }
+}
+
+const HOURS_PEAK = [8, 8, 10, 13, 13, 14, 16, 18, 18, 21, 21, 23];
+/** Génère un historique de démonstration réaliste (jamais publié dans le groupe). */
+export async function seedDemoHistory(uid, habit, days, triggers) {
+  const now = Date.now();
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const logs = [];
+  let lastUse = 0;
+  for (let d = days; d >= 0; d--) {
+    const progress = 1 - d / Math.max(1, days); // on s'améliore avec le temps
+    const n = Math.round(rand(2, 6) * (1 - progress * 0.45));
+    for (let i = 0; i < n; i++) {
+      const day = new Date(now - d * DAY);
+      day.setHours(HOURS_PEAK[Math.floor(Math.random() * HOURS_PEAK.length)], Math.floor(rand(0, 59)), 0, 0);
+      const at = day.getTime();
+      if (at > now - MINUTE) continue;
+      const p = localParts(at, tz());
+      const trigger = triggers[Math.floor(Math.random() * Math.min(triggers.length, 5))] ?? null;
+      // En mode arrêt, pas d'écart sur les 3 derniers jours : la série en cours reste visible.
+      const resisted = (habit.mode === 'quit' && d < 3) || Math.random() < 0.55 + progress * 0.35;
+      const base = { habitId: habit.id, at, localHour: p.hour, localDow: p.dow, trigger, note: '', demo: true, createdAt: serverTimestamp() };
+      logs.push({ ...base, type: 'craving', intensity: Math.ceil(rand(1, 5)), resisted });
+      if (!resisted) {
+        logs.push({ ...base, type: 'use', quantity: Math.random() < 0.8 ? 1 : 2 });
+        lastUse = Math.max(lastUse, at);
+      }
+    }
+  }
+  for (let i = 0; i < logs.length; i += 400) {
+    const batch = writeBatch(db);
+    logs.slice(i, i + 400).forEach((l) => batch.set(doc(collection(db, 'users', uid, 'logs')), l));
+    await batch.commit();
+  }
+  const patch = { startedAt: Math.min(habit.startedAt ?? now, now - days * DAY) };
+  if (lastUse > (habit.lastUseAt ?? 0)) patch.lastUseAt = lastUse;
+  await updateDoc(doc(db, 'users', uid, 'habits', habit.id), patch);
+  return logs.length;
+}
+
+/** Supprime uniquement les données de démonstration, et recalcule la dernière consommation réelle. */
+export async function purgeDemoHistory(uid, habits) {
+  const snap = await getDocs(query(collection(db, 'users', uid, 'logs'), where('demo', '==', true)));
+  await deleteRefs(snap.docs.map((d) => d.ref));
+  const real = await getDocs(query(collection(db, 'users', uid, 'logs'), where('type', '==', 'use')));
+  for (const h of habits) {
+    const last = Math.max(0, ...real.docs.map((d) => d.data()).filter((l) => l.habitId === h.id).map((l) => l.at));
+    await updateDoc(doc(db, 'users', uid, 'habits', h.id), { lastUseAt: last > 0 ? last : deleteField() });
+  }
+  return snap.size;
+}
+
+export function shiftHabitStart(uid, habit, days) {
+  return updateDoc(doc(db, 'users', uid, 'habits', habit.id), { startedAt: (habit.startedAt ?? Date.now()) - days * DAY });
+}
+
+export function setHabitGoal(uid, habitId, goal) {
+  return updateDoc(doc(db, 'users', uid, 'habits', habitId), { goal: goal ?? deleteField() });
+}
+
+export function goalReached(uid, habitId) {
+  return updateDoc(doc(db, 'users', uid, 'habits', habitId), { goal: deleteField(), goalsReached: increment(1) });
+}
+
+/** Supprime une entrée ; si c'était la dernière consommation, la série est recalculée. */
+export async function deleteLog(uid, log, habit, logs) {
+  await deleteDoc(doc(db, 'users', uid, 'logs', log.id));
+  if (log.type === 'use' && habit?.lastUseAt === log.at) {
+    const last = Math.max(0, ...logs.filter((l) => l.habitId === habit.id && l.type === 'use' && l.id !== log.id).map((l) => l.at));
+    await updateDoc(doc(db, 'users', uid, 'habits', habit.id), { lastUseAt: last > 0 ? last : deleteField() });
+  }
+}
+
 // ---------- Données personnelles (RGPD) ----------
 const readAll = async (q) => (await getDocs(q)).docs;
 
@@ -364,6 +484,8 @@ export async function exportMyData(uid) {
 
 /** Suppression complète du compte, sans serveur. */
 export async function deleteMyAccount(uid) {
+  const inviteCode = (await getDoc(doc(db, 'users', uid))).data()?.inviteCode;
+  if (inviteCode) await deleteDoc(doc(db, 'invites', inviteCode)).catch(() => {});
   const refs = [
     ...(await readAll(collection(db, 'users', uid, 'logs'))),
     ...(await readAll(collection(db, 'users', uid, 'habits'))),

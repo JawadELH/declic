@@ -14,22 +14,22 @@ const LOG_WINDOW_DAYS = 365;
 export function AppDataProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = chargement, null = déconnecté
   const [userDoc, setUserDoc] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(undefined); // undefined = pas encore chargé
   const [habits, setHabits] = useState(null);
   const [logs, setLogs] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [engine, setEngine] = useState(null);
+  const [engine, setEngine] = useState(undefined); // undefined = pas encore chargé, null = absent
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), []);
 
   useEffect(() => {
     if (!user) {
       setUserDoc(null);
-      setProfile(null);
+      setProfile(user === null ? null : undefined);
       setHabits(user === null ? [] : null);
       setLogs([]);
       setNotifications([]);
-      setEngine(null);
+      setEngine(user === null ? null : undefined);
       return;
     }
     const uid = user.uid;
@@ -38,7 +38,7 @@ export function AppDataProvider({ children }) {
       touchActivity(uid).catch(() => {});
       unsubs.push(onSnapshot(doc(db, 'users', uid), (s) => setUserDoc(s.data() ?? null)));
     });
-    unsubs.push(onSnapshot(doc(db, 'profiles', uid), (s) => setProfile(s.exists() ? s.data() : null)));
+    unsubs.push(onSnapshot(doc(db, 'profiles', uid), (s) => setProfile(s.exists() ? s.data() : null), () => setProfile(null)));
     unsubs.push(
       onSnapshot(collection(db, 'users', uid, 'habits'), (s) =>
         setHabits(
@@ -47,6 +47,7 @@ export function AppDataProvider({ children }) {
             .filter((h) => h.active !== false)
             .sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt)),
         ),
+        () => setHabits([]),
       ),
     );
     const since = Date.now() - LOG_WINDOW_DAYS * DAY;
@@ -83,7 +84,7 @@ export function AppDataProvider({ children }) {
       notifications,
       unread: notifications.filter((n) => !n.readAt).length,
       engine,
-      loading: user === undefined || (user && habits === null),
+      loading: user === undefined || (user && (habits === null || profile === undefined)),
     }),
     [user, userDoc, profile, habits, logs, notifications, engine],
   );

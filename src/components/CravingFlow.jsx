@@ -1,14 +1,18 @@
 // Flux plein écran « J'ai une envie » : le minuteur de respiration démarre tout seul,
 // le groupe peut envoyer de la force en direct, puis récompense immédiate.
-import { useEffect, useRef, useState } from 'react';
-import { IconCheck, IconX, IconHeartHandshake } from '@tabler/icons-react';
+// Les écritures ne sont jamais attendues : l'app reste fluide même hors ligne
+// (Firestore applique tout de suite en local et synchronise au retour du réseau).
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { IconCheck, IconX, IconHeartHandshake, IconPlant2 } from '@tabler/icons-react';
 import { useAppData } from '../hooks/useAppData.jsx';
-import { useSosSupport } from '../hooks/useGroup.js';
+import { usePulse, useSosSupport } from '../hooks/useGroup.js';
+import { useToast } from './Toast.jsx';
 import Avatar from './Avatar.jsx';
-import { closeSos, logResisted, logUse, publishActivity, startSos } from '../lib/db.js';
+import { Confetti, SurpriseCard, TreeArt } from './Rewards.jsx';
+import { closeSos, logResisted, logUse, publishActivity, saveBadge, startSos } from '../lib/db.js';
 import { buzz } from '../lib/ui.js';
 import { money } from '../lib/format.js';
-import { cravingPhrase, formatDuration, MINUTE, triggersOf } from '../../shared/index.js';
+import { cravingPhrase, formatDuration, MINUTE, treeStage, triggersOf } from '../../shared/index.js';
 
 const TOTAL = 90; // secondes : une envie redescend en général en quelques minutes
 const PHASE = 4;
@@ -25,16 +29,26 @@ function shareAllowed(key) {
   return true;
 }
 
-export default function CravingFlow({ habit, stats, mode = 'craving', onClose }) {
+export default function CravingFlow({ habit, stats, mode = 'craving', initialStep = null, onClose }) {
   const { user, profile, userDoc } = useAppData();
-  const [step, setStep] = useState(mode === 'slip' ? 'slip' : 'breathe');
+  const toast = useToast();
+  const pulse = usePulse();
+  const [step, setStep] = useState(initialStep ?? (mode === 'slip' ? 'slip' : 'breathe'));
   const [t, setT] = useState(0);
   const [trigger, setTrigger] = useState(null);
   const [sosId, setSosId] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [victories, setVictories] = useState(initialStep === 'victory' ? stats.resisted + 1 : stats.resisted);
   const supporters = useSosSupport(sosId);
   const prevCount = useRef(0);
   const share = userDoc?.shareActivity !== false;
+
+  const syncError = useCallback(() => toast('Enregistrement impossible pour le moment. Réessaie dans un instant.', { duration: 6000 }), [toast]);
+
+  // Fermer l'écran pendant un SOS le clôture aussi (sinon il resterait visible 10 minutes chez les autres).
+  const close = useCallback(() => {
+    if (sosId && step === 'breathe') closeSos(sosId, 'closed').catch(() => {});
+    onClose();
+  }, [sosId, step, onClose]);
 
   useEffect(() => {
     if (step !== 'breathe' || t >= TOTAL) return;
@@ -48,55 +62,44 @@ export default function CravingFlow({ habit, stats, mode = 'craving', onClose })
   }, [supporters.length]);
 
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    const onKey = (e) => e.key === 'Escape' && close();
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
-  }, [onClose]);
+  }, [close]);
 
-  async function askGroup() {
-    if (sosId || busy) return;
-    setBusy(true);
-    try {
-      setSosId(await startSos(user.uid, profile, habit, trigger));
-    } finally {
-      setBusy(false);
-    }
+  function askGroup() {
+    if (sosId) return;
+    setSosId(startSos(user.uid, profile, habit, trigger, () => toast('Le groupe n’a pas pu être prévenu (connexion ?).')));
   }
 
-  async function won() {
-    setBusy(true);
-    try {
-      await logResisted(user.uid, habit, { trigger });
-      if (sosId) closeSos(sosId, 'resisted').catch(() => {});
-      if (share && shareAllowed(`declic.share.${user.uid}`)) publishActivity(user.uid, profile, { kind: 'resisted', habit }).catch(() => {});
-      buzz();
-      setStep('victory');
-    } finally {
-      setBusy(false);
-    }
+  function won() {
+    logResisted(user.uid, habit, { trigger }).catch(syncError);
+    if (sosId) closeSos(sosId, 'resisted').catch(() => {});
+    if (share && shareAllowed(`declic.share.${user.uid}`)) publishActivity(user.uid, profile, { kind: 'resisted', habit }).catch(() => {});
+    buzz([30, 40, 60]);
+    setVictories(stats.resisted + 1);
+    setStep('victory');
   }
 
-  async function slipped(quantity) {
-    setBusy(true);
-    try {
-      await logUse(user.uid, habit, { quantity, trigger, fromCraving: mode !== 'slip' });
-      if (sosId) closeSos(sosId, 'slip').catch(() => {});
-      setStep('slipDone');
-    } finally {
-      setBusy(false);
-    }
+  function slipped(quantity) {
+    logUse(user.uid, habit, { quantity, trigger, fromCraving: mode !== 'slip' }).catch(syncError);
+    if (sosId) closeSos(sosId, 'slip').catch(() => {});
+    setStep('slipDone');
   }
 
   const left = Math.max(0, TOTAL - t);
   const inhale = Math.floor(t / PHASE) % 2 === 0;
+  const before = treeStage(stats.resisted);
+  const after = treeStage(victories);
+  const grew = after.index > before.index;
 
   return (
     <div className="flow" role="dialog" aria-modal="true" aria-label="J’ai une envie">
-      <button className="flow-close" onClick={onClose} aria-label="Fermer">
+      <button className="flow-close" onClick={close} aria-label="Fermer">
         <IconX size={24} />
       </button>
 
@@ -142,11 +145,11 @@ export default function CravingFlow({ habit, stats, mode = 'craving', onClose })
 
           <div className="flow-actions">
             {!sosId && (
-              <button className="btn ghost" onClick={askGroup} disabled={busy}>
+              <button className="btn ghost" onClick={askGroup}>
                 <IconHeartHandshake size={20} aria-hidden /> Prévenir le groupe
               </button>
             )}
-            <button className="btn primary xl" onClick={won} disabled={busy}>
+            <button className="btn primary xl" onClick={won}>
               J’ai tenu
             </button>
             <button className="link" onClick={() => setStep('slip')}>
@@ -158,17 +161,34 @@ export default function CravingFlow({ habit, stats, mode = 'craving', onClose })
 
       {step === 'victory' && (
         <div className="flow-body center-col">
+          <Confetti />
           <div className="badge-win pop">
             <IconCheck size={56} stroke={2.5} aria-hidden />
           </div>
           <h1 className="win-title">Envie battue</h1>
-          <p className="win-sub">{stats.resisted + 1}e victoire</p>
+          <p className="win-sub">{victories}e victoire</p>
           <p className="muted win-detail">
-            {habit.costPerUnit > 0 && `+${money(habit.costPerUnit, habit.currency)} gardés. `}
+            {habit.costPerUnit > 0 && `+${money(habit.costPerUnit, habit.currency, 2)} gardés. `}
             {habit.mode === 'quit' && stats.nextMilestone
               ? `Encore ${formatDuration(Math.max(0, stats.nextMilestone.minutes * MINUTE - stats.streakMs))} avant ton prochain cap (${stats.nextMilestone.title}).`
               : 'Chaque envie battue rend la suivante plus facile.'}
           </p>
+          {grew && (
+            <div className="grew pop">
+              <TreeArt stage={after.index} size={64} />
+              <span>
+                <IconPlant2 size={16} aria-hidden /> Ton arbre a grandi : <strong>{after.name}</strong>
+              </span>
+            </div>
+          )}
+          <SurpriseCard
+            habit={habit}
+            pulse={pulse}
+            onRare={(id) => {
+              buzz([20, 30, 20, 30, 80]);
+              saveBadge(user.uid, id).catch(() => {});
+            }}
+          />
           <div className="flow-actions">
             <button className="btn primary xl" onClick={onClose}>
               Continuer
@@ -183,7 +203,7 @@ export default function CravingFlow({ habit, stats, mode = 'craving', onClose })
           <p className="muted">{habit.unitPlural}</p>
           <div className="qty">
             {[1, 2, 3, 5].map((q) => (
-              <button key={q} className="qty-btn" onClick={() => slipped(q)} disabled={busy}>
+              <button key={q} className="qty-btn" onClick={() => slipped(q)}>
                 {q}
               </button>
             ))}
@@ -196,7 +216,7 @@ export default function CravingFlow({ habit, stats, mode = 'craving', onClose })
         <div className="flow-body center-col">
           <h1 className="win-title">C’est noté</h1>
           <p className="muted win-detail">
-            Tes {money(stats.moneySaved, habit.currency)} gardés et tes {stats.resisted} victoires restent acquis. On repart, maintenant.
+            Tes {money(stats.moneySaved, habit.currency)} gardés, tes {stats.resisted} victoires et ton arbre restent acquis. On repart, maintenant.
           </p>
           <p className="muted small">La prochaine fois que {cravingPhrase(habit)} arrive, appuie sur « J’ai une envie » avant de décider.</p>
           <div className="flow-actions">

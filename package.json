@@ -1,7 +1,7 @@
 {
   "name": "declic",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Déclic — réseau social bienveillant pour se libérer de ses mauvaises habitudes (tabac, alcool, sucre, écrans…).",
   "type": "module",
   "license": "MIT",

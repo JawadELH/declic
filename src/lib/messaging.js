@@ -4,7 +4,7 @@ import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messagi
 import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
 import { app, db, firebaseConfig } from '../firebase.js';
 
-async function registerSW() {
+export async function registerSW() {
   const params = new URLSearchParams(Object.entries(firebaseConfig).filter(([, v]) => v));
   return navigator.serviceWorker.register(`/firebase-messaging-sw.js?${params}`);
 }

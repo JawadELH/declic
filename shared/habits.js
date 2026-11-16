@@ -33,6 +33,8 @@ const COMMON_TIPS = [
 export const HABIT_TEMPLATES = {
   tabac: {
     id: 'tabac',
+    usedWord: 'fumées',
+    usedWordOne: 'fumée',
     cravingPhrase: 'l’envie de fumer',
     label: 'Tabac',
     emoji: '🚭',
@@ -63,6 +65,8 @@ export const HABIT_TEMPLATES = {
   },
   alcool: {
     id: 'alcool',
+    usedWord: 'bus',
+    usedWordOne: 'bu',
     cravingPhrase: 'l’envie de boire',
     label: 'Alcool',
     emoji: '🍷',
@@ -78,6 +82,8 @@ export const HABIT_TEMPLATES = {
   },
   sucre: {
     id: 'sucre',
+    usedWord: 'mangées',
+    usedWordOne: 'mangée',
     cravingPhrase: 'l’envie de sucré',
     label: 'Sucre',
     emoji: '🍬',
@@ -90,6 +96,8 @@ export const HABIT_TEMPLATES = {
   },
   ecrans: {
     id: 'ecrans',
+    usedWord: 'passées',
+    usedWordOne: 'passée',
     cravingPhrase: 'l’envie de scroller',
     label: 'Réseaux sociaux',
     emoji: '📱',
@@ -102,6 +110,7 @@ export const HABIT_TEMPLATES = {
   },
   jeux: {
     id: 'jeux',
+    usedWord: '',
     cravingPhrase: 'l’envie de jouer',
     label: "Jeux d'argent",
     emoji: '🎰',
@@ -115,6 +124,7 @@ export const HABIT_TEMPLATES = {
   },
   ongles: {
     id: 'ongles',
+    usedWord: '',
     cravingPhrase: 'l’envie de te ronger les ongles',
     label: 'Ongles rongés',
     emoji: '💅',
@@ -127,6 +137,8 @@ export const HABIT_TEMPLATES = {
   },
   custom: {
     id: 'custom',
+    usedWord: 'consommées',
+    usedWordOne: 'consommée',
     label: 'Autre habitude',
     emoji: '✨',
     unit: 'fois',
@@ -161,6 +173,13 @@ export function triggersOf(habit) {
 export function cravingPhrase(habit) {
   const t = templateOf(habit);
   return t.cravingPhrase ?? `l’envie (${(habit?.label ?? t.label).toLowerCase()})`;
+}
+
+/** « cigarettes fumées », « verres bus »… (accord porté par le modèle). */
+export function usedLabel(habit, n = 2) {
+  const t = templateOf(habit);
+  if (Math.abs(n) <= 1) return `${habit?.unit ?? t.unit} ${t.usedWordOne ?? t.usedWord ?? 'consommée'}`.trim();
+  return `${habit?.unitPlural ?? t.unitPlural} ${t.usedWord ?? 'consommées'}`.trim();
 }
 
 export function tipsOf(habit) {

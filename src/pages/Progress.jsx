@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react';
-import { IconCheck, IconTrendingDown, IconTrendingUp } from '@tabler/icons-react';
+import { IconCheck, IconLock, IconSparkles, IconTrendingDown, IconTrendingUp } from '@tabler/icons-react';
+import { TreeCard } from '../components/Rewards.jsx';
 import { useAppData, useNow } from '../hooks/useAppData.jsx';
 import { CravingsChart, Heatmap, SavingsChart, TriggersChart } from '../components/Charts.jsx';
 import { money, num, pct } from '../lib/format.js';
-import { computeExtraStats, computeHabitStats, deriveInsights, formatDuration, templateOf } from '../../shared/index.js';
+import { computeExtraStats, computeHabitStats, deriveInsights, formatDuration, RARE_BADGES, templateOf } from '../../shared/index.js';
 
 export default function Progress() {
-  const { habits, logs } = useAppData();
+  const { habits, logs, userDoc } = useAppData();
   const now = useNow(60_000);
+  const badges = userDoc?.badges ?? {};
+  const owned = RARE_BADGES.filter((b) => badges[b.id]).length;
   const [id, setId] = useState(habits[0].id);
   const habit = habits.find((h) => h.id === id) ?? habits[0];
   const stats = useMemo(() => computeHabitStats(habit, logs, now), [habit, logs, now]);
@@ -34,6 +37,24 @@ export default function Progress() {
         <Tile label="Envies surmontées" value={pct(stats.resistRate)} sub={`${stats.resisted} sur ${stats.cravingsTotal}`} />
         <Tile label={habit.mode === 'quit' ? 'Record' : 'Depuis le début'} value={formatDuration(habit.mode === 'quit' ? stats.longestStreakMs : stats.elapsedMs).split(' ').slice(0, 2).join(' ')} />
       </div>
+
+      <TreeCard victories={stats.resisted} />
+
+      <section className="card">
+        <h3>
+          Collection rare <span className="muted small">· {owned}/{RARE_BADGES.length}</span>
+        </h3>
+        <p className="muted small">Après chaque envie battue, une carte surprise. Parfois, elle est rare.</p>
+        <div className="badges">
+          {RARE_BADGES.map((b) => (
+            <div key={b.id} className={`badge ${badges[b.id] ? 'on' : ''}`} title={badges[b.id] ? b.text : 'À découvrir'}>
+              <span className="badge-ico">{badges[b.id] ? <IconSparkles size={20} aria-hidden /> : <IconLock size={18} aria-hidden />}</span>
+              <span className="badge-name">{badges[b.id] ? b.name : '???'}</span>
+              {badges[b.id] > 1 && <span className="badge-count">×{badges[b.id]}</span>}
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="card projection-card">
         <h3>À ce rythme</h3>

@@ -1,5 +1,8 @@
-export const money = (v, currency = 'EUR') =>
-  new Intl.NumberFormat('fr-FR', { style: 'currency', currency, maximumFractionDigits: v >= 100 ? 0 : 2 }).format(v || 0);
+/** Montant : centimes affichés sous 100 € (ou toujours si `digits` = 2). */
+export const money = (v, currency = 'EUR', digits = null) => {
+  const d = digits ?? (Math.abs(v || 0) >= 100 ? 0 : 2);
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency, minimumFractionDigits: d, maximumFractionDigits: d }).format(v || 0);
+};
 
 export const num = (v, digits = 0) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits }).format(v || 0);
 
